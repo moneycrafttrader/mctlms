@@ -12,7 +12,5 @@
 packages:
   - 'apps/*'
   - 'packages/*'
-allowBuilds:
-  '@nestjs/core': set this to true or false
-  puppeteer: true
-onlyBuiltDependencies: '[]'
+onlyBuiltDependencies:
+  - '@nestjs/core'
