@@ -86,7 +86,7 @@ export class CoursesService {
       throw new NotFoundException(`Course with id "${id}" not found.`);
     }
 
-    if (currentUser?.role === UserRole.STUDENT && currentUser.id) {
+    if (currentUser && currentUser.role === UserRole.STUDENT && currentUser.id) {
       const batches = (data as any).batches ?? [];
       const batchIds = batches.map((b: any) => b.id);
 
