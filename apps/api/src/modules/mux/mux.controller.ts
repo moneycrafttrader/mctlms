@@ -91,7 +91,7 @@ export class MuxController {
 
         try {
           const { error } = await this.supabaseService.client
-            .from(TABLES.VIDEOS)
+            .from(TABLES.RECORDINGS)
             .update({
               mux_asset_id: assetId,
               mux_playback_id: playbackId,
@@ -138,7 +138,7 @@ export class MuxController {
         if (failedAssetId) {
           try {
             const { error } = await this.supabaseService.client
-              .from(TABLES.VIDEOS)
+              .from(TABLES.RECORDINGS)
               .update({ status: 'error' })
               .eq('mux_asset_id', failedAssetId);
 
@@ -161,7 +161,7 @@ export class MuxController {
         if (deletedAssetId) {
           try {
             const { error, count } = await this.supabaseService.client
-              .from(TABLES.VIDEOS)
+              .from(TABLES.RECORDINGS)
               .delete()
               .eq('mux_asset_id', deletedAssetId);
 

@@ -137,7 +137,7 @@ CREATE INDEX idx_batch_teachers_user ON batch_teachers(user_id);
 -- 2.6 sessions and webinar_attendance (live trading sessions)
 CREATE TABLE sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+  batch_id UUID REFERENCES batches(id) ON DELETE CASCADE,
   zoom_meeting_id TEXT NOT NULL,
   start_time TIMESTAMPTZ NOT NULL,
   title TEXT NOT NULL,
@@ -333,43 +333,10 @@ CREATE TABLE attendance (
 CREATE INDEX idx_attendance_session ON attendance(session_id);
 CREATE INDEX idx_attendance_user ON attendance(user_id);
 
--- 2.10 recordings + recording_batches (multi-batch flexibility)
+-- 2.10 recordings + recording_batches (multi-batch flexibility, unified with old videos)
 CREATE TABLE recordings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID REFERENCES live_sessions(id) ON DELETE SET NULL,
-  title TEXT NOT NULL,
-  description TEXT,
-  mux_asset_id TEXT,
-  mux_playback_id TEXT,
-  duration_seconds INTEGER,
-  status TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'ready', 'failed')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_recordings_session ON recordings(session_id);
-CREATE INDEX idx_recordings_status ON recordings(status);
-
-CREATE TABLE recording_batches (
-  recording_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
-  batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
-  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (recording_id, batch_id)
-);
-
-CREATE INDEX idx_recording_batches_batch ON recording_batches(batch_id);
-
--- 2.11 topics, videos, video_batches, video_progress, video_views
-CREATE TABLE topics (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  description TEXT,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE videos (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   description TEXT,
   topic_id UUID REFERENCES topics(id) ON DELETE SET NULL,
@@ -383,18 +350,33 @@ CREATE TABLE videos (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_videos_topic ON videos(topic_id);
-CREATE INDEX idx_videos_status ON videos(status);
+CREATE INDEX idx_recordings_session ON recordings(session_id);
+CREATE INDEX idx_recordings_status ON recordings(status);
+CREATE INDEX idx_recordings_topic ON recordings(topic_id);
 
-CREATE TABLE video_batches (
-  video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+CREATE TABLE recording_batches (
+  recording_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
   batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
-  PRIMARY KEY (video_id, batch_id)
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (recording_id, batch_id)
 );
 
+CREATE INDEX idx_recording_batches_recording ON recording_batches(recording_id);
+CREATE INDEX idx_recording_batches_batch ON recording_batches(batch_id);
+
+-- 2.11 topics, video_progress, video_views
+CREATE TABLE topics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  description TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- video_progress and video_views reference recordings(id) after the 007 migration
 CREATE TABLE video_progress (
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  video_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
   watched_seconds INTEGER NOT NULL DEFAULT 0,
   completed BOOLEAN NOT NULL DEFAULT FALSE,
   last_watched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -404,7 +386,7 @@ CREATE TABLE video_progress (
 CREATE TABLE video_views (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  video_id UUID NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
   viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ip_address TEXT
 );
@@ -518,7 +500,6 @@ CREATE TRIGGER set_updated_at_batches BEFORE UPDATE ON batches FOR EACH ROW EXEC
 CREATE TRIGGER set_updated_at_payment_plans BEFORE UPDATE ON payment_plans FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER set_updated_at_live_sessions BEFORE UPDATE ON live_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER set_updated_at_recordings BEFORE UPDATE ON recordings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER set_updated_at_videos BEFORE UPDATE ON videos FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER set_updated_at_tests BEFORE UPDATE ON tests FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER set_updated_at_attendance BEFORE UPDATE ON attendance FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER set_updated_at_upload_queue BEFORE UPDATE ON upload_queue FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

@@ -36,6 +36,7 @@ export const API_ROUTES = {
   LIVE_SESSIONS: '/live-sessions',
   ATTENDANCE: '/attendance',
   VIDEOS: '/videos',
+  RECORDINGS: '/recordings',
   TESTS: '/tests',
   BULK_UPLOAD: '/bulk-upload',
   PAYMENTS: {
@@ -46,4 +47,7 @@ export const API_ROUTES = {
   EMAIL: '/email/test',
   INVOICES: '/invoices',
   ADMIN_SESSIONS: '/admin/sessions',
+  ADMIN_RECORDINGS: '/admin/recordings',
+  ADMIN_TOPICS: '/admin/topics',
+  ADMIN_UPLOAD_URL: '/admin/upload-url',
 } as const;

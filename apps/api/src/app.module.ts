@@ -26,9 +26,9 @@ import { UsersModule } from './modules/users/users.module';
 import { CoursesModule } from './modules/courses/courses.module';
 import { BatchesModule } from './modules/batches/batches.module';
 import { LiveSessionsModule } from './modules/live-sessions/live-sessions.module';
+import { RecordingsModule } from './modules/recordings/recordings.module';
 import { TradingSessionsModule } from './modules/trading-sessions/trading-sessions.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
-import { VideosModule } from './modules/videos/videos.module';
 import { EmailModule } from './modules/email/email.module';
 import { TestsModule } from './modules/tests/tests.module';
 import { ZoomModule } from './modules/zoom/zoom.module';
@@ -93,9 +93,9 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     CoursesModule,
     BatchesModule,
     LiveSessionsModule,
+    RecordingsModule,
     TradingSessionsModule,
     AttendanceModule,
-    VideosModule,
     EmailModule,
     TestsModule,
     ZoomModule,
