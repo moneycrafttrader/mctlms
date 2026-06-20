@@ -28,7 +28,7 @@ export interface AdminVideo {
   duration_seconds?: number;
   created_at: string;
   topics?: { name: string } | null;
-  video_batch_access?: { batch_id: string }[];
+  video_batches?: { batch_id: string }[];
 }
 
 export interface Topic {
