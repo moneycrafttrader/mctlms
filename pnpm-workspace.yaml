@@ -1,0 +1,18 @@
+# pnpm workspace configuration
+#
+# Why this file exists:
+#   - Tells pnpm which directories contain packages that can depend on each other.
+#   - Enables the `@lms/shared-types` package to be imported by both apps/api and apps/web
+#     without publishing to npm.
+#
+# A junior should know:
+#   - Every folder under apps/ and packages/ is treated as a workspace package.
+#   - To add a dependency on the shared-types package, use:
+#       pnpm add @lms/shared-types --workspace --filter <target>
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  '@nestjs/core': set this to true or false
+  puppeteer: true
+onlyBuiltDependencies: '[]'

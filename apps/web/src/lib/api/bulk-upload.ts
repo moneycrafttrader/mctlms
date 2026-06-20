@@ -1,0 +1,46 @@
+import { fetchApi } from '@/lib/api-client';
+import { API_ROUTES } from '@/lib/constants';
+
+export interface BulkUploadJob {
+  id: string;
+  job_type: string;
+  uploaded_by: string;
+  file_name: string;
+  total_rows: number;
+  success_count: number;
+  failure_count: number;
+  status: 'processing' | 'completed' | 'failed';
+  failures: { email: string; error: string }[];
+  created_at: string;
+  completed_at?: string;
+}
+
+/**
+ * Fetch the 50 most recent bulk upload jobs.
+ */
+export async function getBulkUploadJobs(token?: string) {
+  return fetchApi<BulkUploadJob[]>(`${API_ROUTES.BULK_UPLOAD}/jobs`, { token });
+}
+
+/**
+ * Upload a CSV/Excel file to bulk-create student accounts.
+ * Sends multipart/form-data so no Content-Type header is set manually.
+ */
+export async function uploadStudentsCsv(
+  formData: FormData,
+  token?: string,
+) {
+  return fetchApi<{
+    jobId: string;
+    fileName: string;
+    totalRows: number;
+    successCount: number;
+    failureCount: number;
+    failures: { email: string; error: string }[];
+  }>(`${API_ROUTES.BULK_UPLOAD}/students`, {
+    method: 'POST',
+    body: formData,
+    token,
+    headers: {}, // let fetch set multipart boundary automatically
+  });
+}

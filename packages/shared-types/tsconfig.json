@@ -1,0 +1,33 @@
+/*
+ * TypeScript configuration for @lms/shared-types
+ *
+ * Why this file exists:
+ *   - Lets editors (VS Code) and consumers (apps/api, apps/web) understand the
+ *     TypeScript source without a build step.
+ *   - `noEmit: true` means the .ts files are used directly — tsc only type-checks.
+ *
+ * A junior should know:
+ *   - You don't build this package. Just import from '@lms/shared-types' and it works.
+ *   - If you add a new .ts file inside src/, you don't need to register it anywhere.
+ */
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

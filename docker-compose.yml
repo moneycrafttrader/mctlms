@@ -1,0 +1,30 @@
+# Docker Compose configuration for local development services
+#
+# Why this file exists:
+#   - Spins up services the application needs at runtime (currently Redis) so developers
+#     don't have to install them locally.
+#   - The `volumes` section makes sure Redis data survives container restarts.
+#   - The `healthcheck` lets other services (or CI) wait until Redis is actually ready.
+#
+# A junior should know:
+#   - Run `docker compose up -d` from the project root to start all services.
+#   - Redis is password-protected (password: localredis). The application reads this from
+#     environment variables.
+#   - The named volume `redis-data` keeps Redis persistence even after `docker compose down`.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: lms-redis
+    ports:
+      - '6379:6379'
+    command: ['redis-server', '--requirepass', 'localredis']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', 'localredis', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:
