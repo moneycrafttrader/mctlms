@@ -24,9 +24,10 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // ── CORS ────────────────────────────────────────────────────
-  // Allow the frontend (Next.js dev server) to call this API
+  // Allow both local dev and production frontend domains
+  const frontendUrl = configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
   app.enableCors({
-    origin: true,
+    origin: [frontendUrl, 'https://mctlms-web.vercel.app'],
     credentials: true,
   });
 

@@ -10,7 +10,7 @@ export class ApiError extends Error {
   }
 }
 
-const API_URL = 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export async function fetchApi<T = any>(
   endpoint: string,
