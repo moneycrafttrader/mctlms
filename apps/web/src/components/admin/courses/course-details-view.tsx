@@ -5,6 +5,7 @@ import { ArrowLeft, Users, BookOpen, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { Modal } from '@/components/ui/Modal';
 import { ReassignBatchForm } from './reassign-batch-form';
+import { BatchStudentsModal } from './batch-students-modal';
 import {
   type CourseStats,
   type Batch,
@@ -34,6 +35,11 @@ export function CourseDetailsView({
   const [batches, setBatches] = useState<Batch[]>(initialBatches);
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [batchForReassign, setBatchForReassign] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const [studentsBatch, setStudentsBatch] = useState<{
     id: string;
     name: string;
   } | null>(null);
@@ -139,12 +145,20 @@ export function CourseDetailsView({
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => openReassignModal(batch)}
-                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                      >
-                        Reassign Course
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setStudentsBatch({ id: batch.id, name: batch.name })}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        >
+                          Students
+                        </button>
+                        <button
+                          onClick={() => openReassignModal(batch)}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        >
+                          Reassign Course
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -153,6 +167,15 @@ export function CourseDetailsView({
           </div>
         )}
       </div>
+
+      {/* Batch Students Modal */}
+      <BatchStudentsModal
+        isOpen={!!studentsBatch}
+        batchId={studentsBatch?.id ?? ''}
+        batchName={studentsBatch?.name ?? ''}
+        onClose={() => setStudentsBatch(null)}
+        token={token}
+      />
 
       {/* Reassign Modal */}
       <Modal

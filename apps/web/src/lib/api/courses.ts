@@ -10,6 +10,7 @@ export interface Course {
   end_date?: string;
   created_at: string;
   batchCount?: number;
+  batches?: Batch[];
 }
 
 export interface CourseWithBatches extends Course {
@@ -110,6 +111,86 @@ export async function createBatch(
   return fetchApi<Batch>(API_ROUTES.BATCHES, {
     method: 'POST',
     body: JSON.stringify({ courseId, ...data }),
+    token,
+  });
+}
+
+export interface StudentProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export interface AddStudentResponse {
+  id: string;
+  name: string;
+  email: string;
+  alreadyExisted: boolean;
+}
+
+/**
+ * Add a single student to a batch — creates auth user + profile if needed.
+ * POST /batches/:id/add-student
+ */
+export async function addStudentToBatch(
+  batchId: string,
+  data: { firstName: string; lastName: string; email: string; phone?: string },
+  token?: string,
+) {
+  return fetchApi<AddStudentResponse>(`${API_ROUTES.BATCHES}/${batchId}/add-student`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+    token,
+  });
+}
+
+/**
+ * Fetch the student roster for a batch.
+ * GET /batches/:id/students
+ */
+export async function getBatchStudents(
+  batchId: string,
+  token?: string,
+  page?: number,
+  limit?: number,
+) {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  return fetchApi<{ items: StudentProfile[]; total: number; page: number; limit: number }>(
+    `${API_ROUTES.BATCHES}/${batchId}/students${qs ? `?${qs}` : ''}`,
+    { token },
+  );
+}
+
+/**
+ * Update a batch's name and/or schedule type.
+ * PATCH /batches/:id
+ */
+export async function updateBatch(
+  batchId: string,
+  data: { name?: string; scheduleType?: string },
+  token?: string,
+) {
+  return fetchApi<Batch>(`${API_ROUTES.BATCHES}/${batchId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+    token,
+  });
+}
+
+/**
+ * Delete a batch.
+ * DELETE /batches/:id
+ */
+export async function deleteBatch(
+  batchId: string,
+  token?: string,
+) {
+  return fetchApi<{ deleted: boolean }>(`${API_ROUTES.BATCHES}/${batchId}`, {
+    method: 'DELETE',
     token,
   });
 }

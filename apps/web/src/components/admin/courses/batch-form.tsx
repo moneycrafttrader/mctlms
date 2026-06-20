@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createBatch } from '@/lib/api/courses';
+import { createBatch, updateBatch, type Batch } from '@/lib/api/courses';
 
 const SCHEDULE_TYPES = [
   { value: 'weekday', label: 'Weekday' },
@@ -13,13 +13,16 @@ interface BatchFormProps {
   courseId: string;
   onSuccess: () => void;
   token?: string;
+  batch?: Batch;
 }
 
-export function BatchForm({ courseId, onSuccess, token }: BatchFormProps) {
-  const [name, setName] = useState('');
-  const [scheduleType, setScheduleType] = useState('weekday');
+export function BatchForm({ courseId, onSuccess, token, batch }: BatchFormProps) {
+  const [name, setName] = useState(batch?.name ?? '');
+  const [scheduleType, setScheduleType] = useState(batch?.schedule_type ?? 'weekday');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const isEditing = !!batch;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,11 +30,15 @@ export function BatchForm({ courseId, onSuccess, token }: BatchFormProps) {
     setSubmitting(true);
 
     try {
-      await createBatch(courseId, { name, scheduleType }, token);
+      if (isEditing) {
+        await updateBatch(batch.id, { name, scheduleType }, token);
+      } else {
+        await createBatch(courseId, { name, scheduleType }, token);
+      }
       setName('');
       onSuccess();
     } catch (err: any) {
-      setError(err.message || 'Failed to create batch');
+      setError(err.message || `Failed to ${isEditing ? 'update' : 'create'} batch`);
     } finally {
       setSubmitting(false);
     }
@@ -81,7 +88,7 @@ export function BatchForm({ courseId, onSuccess, token }: BatchFormProps) {
         disabled={submitting}
         className="w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
       >
-        {submitting ? 'Creating...' : 'Create Batch'}
+        {submitting ? (isEditing ? 'Updating...' : 'Creating...') : isEditing ? 'Update Batch' : 'Create Batch'}
       </button>
     </form>
   );

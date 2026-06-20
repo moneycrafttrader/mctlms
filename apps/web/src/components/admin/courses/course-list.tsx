@@ -1,11 +1,17 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Plus, BookOpen } from 'lucide-react';
+import { Plus, BookOpen, Pencil, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CourseForm } from './course-form';
 import { BatchForm } from './batch-form';
-import { type Course, getCourses } from '@/lib/api/courses';
+import {
+  type Course,
+  type Batch,
+  getCourses,
+  deleteBatch,
+} from '@/lib/api/courses';
 
 interface CourseListProps {
   initialCourses: Course[];
@@ -17,6 +23,9 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+
+  const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
+  const [deletingBatch, setDeletingBatch] = useState<Batch | null>(null);
 
   const revalidateServerCache = useCallback(async () => {
     try {
@@ -43,6 +52,21 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
   const openBatchModal = (courseId: string) => {
     setSelectedCourseId(courseId);
     setShowBatchModal(true);
+  };
+
+  const openEditBatch = (batch: Batch) => {
+    setEditingBatch(batch);
+  };
+
+  const confirmDeleteBatch = async () => {
+    if (!deletingBatch) return;
+    try {
+      await deleteBatch(deletingBatch.id, token);
+      setDeletingBatch(null);
+      refreshCourses();
+    } catch {
+      // silently fail
+    }
   };
 
   return (
@@ -90,9 +114,38 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
                 </p>
               )}
 
-              <div className="mb-4 flex items-center gap-4 text-sm text-gray-500">
-                <span>{course.batchCount ?? 0} batches</span>
-              </div>
+              {/* Batch list */}
+              {course.batches && course.batches.length > 0 && (
+                <ul className="mb-4 space-y-1.5">
+                  {course.batches.map((batch) => (
+                    <li
+                      key={batch.id}
+                      className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm"
+                    >
+                      <span className="flex items-center gap-2 text-gray-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+                        {batch.name}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEditBatch(batch)}
+                          className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                          title="Edit batch"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingBatch(batch)}
+                          className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600"
+                          title="Delete batch"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               <button
                 onClick={() => openBatchModal(course.id)}
@@ -141,6 +194,35 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
           />
         )}
       </Modal>
+
+      {/* Edit Batch Modal */}
+      <Modal
+        isOpen={!!editingBatch}
+        onClose={() => setEditingBatch(null)}
+        title="Edit Batch"
+      >
+        {editingBatch && (
+          <BatchForm
+            courseId={editingBatch.course_id}
+            batch={editingBatch}
+            onSuccess={() => {
+              setEditingBatch(null);
+              refreshCourses();
+            }}
+            token={token}
+          />
+        )}
+      </Modal>
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={!!deletingBatch}
+        title="Delete Batch"
+        message={`Are you sure you want to delete "${deletingBatch?.name}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteBatch}
+        onCancel={() => setDeletingBatch(null)}
+      />
     </>
   );
 }

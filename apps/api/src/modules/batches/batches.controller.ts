@@ -13,6 +13,7 @@ import { UserRole } from '@lms/shared-types';
 import { BatchesService } from './batches.service';
 import { CreateBatchDto } from './dto/create-batch.dto';
 import { AssignStudentsDto } from './dto/assign-students.dto';
+import { AddStudentDto } from './dto/add-student.dto';
 import { AssignTeachersDto } from './dto/assign-teachers.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -54,6 +55,12 @@ export class BatchesController {
   }
 
   @Roles(UserRole.ADMIN)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.batchesService.remove(id);
+  }
+
+  @Roles(UserRole.ADMIN)
   @Patch(':id/reassign-course')
   reassignCourse(
     @Param('id', ParseUUIDPipe) id: string,
@@ -66,6 +73,12 @@ export class BatchesController {
   @Post(':id/students')
   assignStudents(@Param('id') id: string, @Body() dto: AssignStudentsDto) {
     return this.batchesService.assignStudents(id, dto);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Post(':id/add-student')
+  addStudent(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AddStudentDto) {
+    return this.batchesService.addStudent(id, dto);
   }
 
   @Roles(UserRole.ADMIN)

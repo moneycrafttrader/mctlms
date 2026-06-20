@@ -12,8 +12,10 @@
 import { Module } from '@nestjs/common';
 import { BatchesController } from './batches.controller';
 import { BatchesService } from './batches.service';
+import { EmailModule } from '../email/email.module';
 
 @Module({
+  imports: [EmailModule],
   controllers: [BatchesController],
   providers: [BatchesService],
   exports: [BatchesService],

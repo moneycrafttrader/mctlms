@@ -46,7 +46,7 @@ export class CoursesService {
 
     let query = this.supabaseService.client
       .from(TABLES.COURSES)
-      .select('*, batches:batches(id)', { count: 'exact' })
+      .select('*, batches:batches(id, name, schedule_type, is_active, start_date, end_date, created_at)', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, to);
 
@@ -64,7 +64,6 @@ export class CoursesService {
     const items = (data ?? []).map((c: any) => ({
       ...c,
       batchCount: Array.isArray(c.batches) ? c.batches.length : 0,
-      batches: undefined,
     }));
 
     return {

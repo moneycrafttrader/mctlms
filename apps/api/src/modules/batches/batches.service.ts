@@ -7,16 +7,21 @@ import {
 } from '@nestjs/common';
 import { UserRole, Batch } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { EmailService } from '../email/email.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { CreateBatchDto } from './dto/create-batch.dto';
 import { AssignStudentsDto } from './dto/assign-students.dto';
+import { AddStudentDto } from './dto/add-student.dto';
 import { AssignTeachersDto } from './dto/assign-teachers.dto';
 
 @Injectable()
 export class BatchesService {
   private readonly logger = new Logger(BatchesService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly emailService: EmailService,
+  ) {}
 
   async findAll(page = 1, limit = 20, isActive?: boolean) {
     const from = (page - 1) * limit;
@@ -110,6 +115,30 @@ export class BatchesService {
     }
 
     return data as unknown as Batch;
+  }
+
+  async remove(id: string) {
+    const { data: batch } = await this.supabaseService.client
+      .from(TABLES.BATCHES)
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (!batch) {
+      throw new NotFoundException('Batch not found');
+    }
+
+    const { error } = await this.supabaseService.client
+      .from(TABLES.BATCHES)
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      this.logger.error(`Failed to delete batch ${id}: ${error.message}`);
+      throw new InternalServerErrorException('Failed to delete batch');
+    }
+
+    return { deleted: true };
   }
 
   async update(id: string, dto: Partial<CreateBatchDto>) {
@@ -301,6 +330,97 @@ export class BatchesService {
     }
 
     return (data ?? []).map((item: any) => item.live_sessions);
+  }
+
+  async addStudent(batchId: string, dto: AddStudentDto) {
+    const batch = await this.findById(batchId);
+
+    const supabase = this.supabaseService.client;
+    const name = `${dto.firstName} ${dto.lastName}`.trim();
+
+    // 1. Check if user already exists by email
+    const { data: existing } = await supabase
+      .from(TABLES.PROFILES)
+      .select('id')
+      .eq('email', dto.email.toLowerCase())
+      .maybeSingle();
+
+    let userId: string;
+
+    if (existing) {
+      userId = existing.id;
+    } else {
+      // 2. Create auth user with a temporary password
+      const password = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+      const { data: authData, error: authError } =
+        await supabase.auth.admin.createUser({
+          email: dto.email,
+          password,
+          email_confirm: true,
+          user_metadata: { name },
+        });
+
+      if (authError) {
+        this.logger.error(`Failed to create auth user for ${dto.email}: ${authError.message}`);
+        throw new BadRequestException(authError.message);
+      }
+
+      userId = authData.user.id;
+
+      // 3. Insert profile
+      const { error: profileError } = await supabase
+        .from(TABLES.PROFILES)
+        .insert({
+          id: userId,
+          name,
+          email: dto.email.toLowerCase(),
+          phone: dto.phone ?? null,
+          role: UserRole.STUDENT,
+          is_active: true,
+        });
+
+      if (profileError) {
+        await supabase.auth.admin.deleteUser(userId);
+        this.logger.error(`Failed to create profile for ${dto.email}: ${profileError.message}`);
+        throw new BadRequestException('Failed to create student profile');
+      }
+    }
+
+    // 4. Enroll in batch
+    const { error: enrollError } = await supabase
+      .from(TABLES.BATCH_STUDENTS)
+      .upsert(
+        { batch_id: batchId, user_id: userId },
+        { onConflict: 'batch_id,user_id' },
+      );
+
+    if (enrollError) {
+      this.logger.error(
+        `Failed to enroll user ${userId} in batch ${batchId}: ${enrollError.message}`,
+      );
+      throw new BadRequestException('Failed to enroll student in batch');
+    }
+
+    // Fire-and-forget welcome email — failure must NOT block enrollment
+    try {
+      await this.emailService.sendWelcomeEmail(
+        dto.email,
+        name,
+        (batch as any).name ?? batchId,
+      );
+    } catch (emailErr: any) {
+      this.logger.error(
+        `Welcome email failed for ${dto.email} in batch ${batchId}: ${emailErr.message}`,
+        emailErr.stack,
+      );
+    }
+
+    return {
+      id: userId,
+      name,
+      email: dto.email.toLowerCase(),
+      alreadyExisted: !!existing,
+    };
   }
 
   async assignStudentToBatch(batchId: string, studentId: string): Promise<void> {
