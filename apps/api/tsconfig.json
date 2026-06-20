@@ -16,6 +16,10 @@
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@lms/shared-types": ["../../packages/shared-types/src"],
+      "@lms/shared-types/*": ["../../packages/shared-types/src/*"]
+    }
   }
 }
