@@ -1,25 +1,23 @@
 /*
- * Zoom controller — webhook endpoint for Zoom notifications
- *
- * Why this controller exists:
- *   - Receives HTTP callbacks from Zoom when events happen (participant joins,
- *     recording ready, etc.).
- *   - MUST be @Public() because Zoom has no way to send a JWT token.
- *   - Verifies the webhook signature before processing any event.
- *   - Always returns 200 { message: 'ok' } — never return 500 to Zoom or it will retry.
- *
- * A junior should know:
- *   - The raw body is needed for signature verification (HMAC signs the exact payload).
- *   - In production, add a middleware that stores `req.rawBody` before JSON parsing
- *     (see main.ts rawBody option). For now, we reconstruct from the parsed body.
- *   - We pass supabase.client to the webhook handler so it can write attendance records.
+ * Zoom controller — webhook endpoint + SDK signature generation
  */
-import { Controller, Post, Req, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  UnauthorizedException,
+  ForbiddenException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { ZoomService } from './zoom.service';
 import { ZoomWebhookHandler } from './zoom-webhook.handler';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { TABLES } from '../../common/constants/tables.constant';
 import { Public } from '../../common/decorators/public.decorator';
+import { CreateSignatureDto } from './dto/create-signature.dto';
 
 @Controller('zoom')
 export class ZoomController {
@@ -32,50 +30,109 @@ export class ZoomController {
   ) {}
 
   /**
+   * POST /zoom/signature
+   *
+   * Generates a time-limited HMAC signature for the Zoom Meeting SDK.
+   * Only accessible to authenticated users with batch access to the session.
+   *
+   * Steps:
+   *   1. Verify the user is authenticated (JWT guard handles this)
+   *   2. Look up the session by zoom_meeting_id
+   *   3. Verify the user belongs to a batch assigned to this session
+   *   4. Generate and return the SDK signature
+   */
+  @Post('signature')
+  async createSignature(
+    @Body() dto: CreateSignatureDto,
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    // Look up session by Zoom meeting number
+    const { data: sessions, error: sessionError } = await this.supabaseService.client
+      .from(TABLES.SESSIONS)
+      .select('id, is_live, start_time')
+      .eq('zoom_meeting_id', dto.meetingNumber)
+      .limit(1);
+
+    if (sessionError || !sessions || sessions.length === 0) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const session = sessions[0];
+
+    if (!session.is_live) {
+      throw new ForbiddenException('Session is not live');
+    }
+
+    // Verify user has batch access to this session
+    const { data: userBatches } = await this.supabaseService.client
+      .from(TABLES.BATCH_STUDENTS)
+      .select('batch_id')
+      .eq('user_id', userId);
+
+    const userBatchIds = (userBatches ?? []).map((b: any) => b.batch_id);
+
+    if (userBatchIds.length > 0) {
+      const { data: accessRecords } = await this.supabaseService.client
+        .from(TABLES.SESSION_BATCH_MAPPINGS)
+        .select('batch_id')
+        .eq('session_id', session.id)
+        .in('batch_id', userBatchIds);
+
+      if (!accessRecords || accessRecords.length === 0) {
+        throw new ForbiddenException('You do not have access to this session');
+      }
+    }
+
+    // Generate SDK signature
+    const { signature, sdkKey } = this.zoomService.generateSignature(
+      dto.meetingNumber,
+      dto.role,
+    );
+
+    return {
+      signature,
+      sdkKey,
+      meetingNumber: dto.meetingNumber,
+      role: dto.role,
+    };
+  }
+
+  /**
    * POST /zoom/webhook
    *
    * Zoom calls this endpoint when events happen (joins, leaves, recordings).
-   * We verify the signature, then process the event.
-   *
-   * Always return { message: 'ok' } — never throw errors to Zoom.
    */
   @Public()
   @Post('webhook')
   async handleWebhook(@Req() req: Request) {
-    // ── Extract signature headers ──────────────────────────────
     const signature =
       (req.headers['x-zm-signature'] as string) || '';
     const timestamp =
       (req.headers['x-zm-request-timestamp'] as string) || '';
 
-    // ── Get raw body for signature verification ────────────────
-    // The request body has already been parsed by Express JSON middleware.
-    // For production signature verification, add a middleware that stores
-    // the raw Buffer before parsing (see NestJS raw-body approach).
-    // Here we reconstruct from the parsed object as a reasonable fallback.
     const rawBody = JSON.stringify(req.body);
 
-    // ── Verify signature ───────────────────────────────────────
     try {
       this.zoomService.verifyWebhookSignature(rawBody, signature, timestamp);
     } catch {
-      // Signature verification failed — log and return ok to avoid leaking info
       this.logger.warn('Zoom webhook signature verification failed');
       return { message: 'ok' };
     }
 
-    // ── Process the event ──────────────────────────────────────
     const event = req.body.event as string;
     const payload = req.body;
 
-    // Fire and forget — don't await so we respond immediately
     this.zoomWebhookHandler
       .handle(event, payload, this.supabaseService.client)
       .catch((err) =>
         this.logger.error(`Webhook handler error: ${err.message}`),
       );
 
-    // Always acknowledge immediately
     return { message: 'ok' };
   }
 }

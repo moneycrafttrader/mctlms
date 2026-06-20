@@ -18,12 +18,23 @@ export class TradingSessionsService {
   ) {}
 
   async create(dto: CreateTradingSessionDto) {
-    const webinar = await this.zoomService.createWebinar({
-      topic: dto.title,
-      startTime: dto.startTime,
-      durationMinutes: 60,
-    });
+    this.logger.log(`Creating session "${dto.title}" for batches [${dto.batchIds.join(', ')}]`);
 
+    // ── 1. Create Zoom webinar ─────────────────────────────────
+    let webinar: { webinarId: string; joinUrl: string; startUrl: string };
+    try {
+      webinar = await this.zoomService.createWebinar({
+        topic: dto.title,
+        startTime: dto.startTime,
+        durationMinutes: 60,
+      });
+      this.logger.log(`Zoom webinar created: ID=${webinar.webinarId}, joinUrl=${webinar.joinUrl}`);
+    } catch (err: any) {
+      this.logger.error(`Zoom API call failed: ${err.message}`, err.stack);
+      throw new BadRequestException(`Zoom API error: ${err.message}`);
+    }
+
+    // ── 2. Insert session record (no batch_id — M:N lives in session_batch_mappings) ──
     const { data: session, error } = await this.supabaseService.client
       .from(TABLES.SESSIONS)
       .insert({
@@ -35,24 +46,34 @@ export class TradingSessionsService {
       .select()
       .single();
 
-    if (error || !session) {
-      this.logger.error(`Failed to save session: ${error?.message}`);
-      throw new BadRequestException('Failed to create session');
+    if (error) {
+      this.logger.error(`DB insert into ${TABLES.SESSIONS} failed: ${error.message}`, error);
+      throw new BadRequestException(`Failed to save session: ${error.message}`);
     }
+    if (!session) {
+      this.logger.error('DB insert returned null session (no error)');
+      throw new BadRequestException('Failed to create session record');
+    }
+    this.logger.log(`Session saved: ID=${session.id}`);
 
+    // ── 3. Link session to batches ─────────────────────────────
     const mappings = dto.batchIds.map((batchId) => ({
       session_id: session.id,
       batch_id: batchId,
     }));
 
-    const { error: mapError } = await this.supabaseService.client
+    const { error: mapError, count: mapCount } = await this.supabaseService.client
       .from(TABLES.SESSION_BATCH_MAPPINGS)
-      .insert(mappings);
+      .insert(mappings)
+      .select('', { count: 'exact' });
 
     if (mapError) {
-      this.logger.error(`Failed to link batches: ${mapError.message}`);
+      this.logger.error(`Failed to link batches: ${mapError.message}`, mapError);
+      throw new BadRequestException(`Failed to assign batches to session: ${mapError.message}`);
     }
+    this.logger.log(`Linked ${dto.batchIds.length} batch(es) to session ${session.id}`);
 
+    // ── 4. Fetch batch names for response ──────────────────────
     const { data: batchNames } = await this.supabaseService.client
       .from(TABLES.SESSION_BATCH_MAPPINGS)
       .select('batches!inner(name)')

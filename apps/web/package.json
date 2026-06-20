@@ -12,6 +12,7 @@
     "@mux/mux-player-react": "^3.13.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
+    "@zoomus/websdk": "^2.18.3",
     "axios": "^1.6.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

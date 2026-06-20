@@ -237,6 +237,52 @@ export class ZoomService {
   }
 
   // ──────────────────────────────────────────────────────────────
+  //  generateSignature
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Generate a JWT signature for the Zoom Meeting SDK.
+   *
+   * The Zoom Web SDK requires a time-limited HMAC signature to join a meeting.
+   * This is generated server-side so the SDK secret is never exposed to the client.
+   *
+   * Steps:
+   *   1. Get ZOOM_SDK_KEY and ZOOM_SDK_SECRET from environment
+   *   2. Create a message: sdkKey + meetingNumber + timestamp + role
+   *   3. HMAC-SHA256 sign with the SDK secret
+   *   4. Base64 encode: sdkKey.meetingNumber.timestamp.role.hash
+   *   5. Return the signature + sdkKey for the frontend
+   *
+   * Reference: https://developers.zoom.us/docs/meeting-sdk/web/auth/
+   */
+  generateSignature(
+    meetingNumber: string,
+    role: number,
+  ): { signature: string; sdkKey: string } {
+    const sdkKey = this.configService.get<string>('ZOOM_SDK_KEY');
+    const sdkSecret = this.configService.get<string>('ZOOM_SDK_SECRET');
+
+    if (!sdkKey || !sdkSecret) {
+      throw new Error(
+        'ZOOM_SDK_KEY and ZOOM_SDK_SECRET must be set in environment variables',
+      );
+    }
+
+    const timestamp = new Date().getTime() - 30000;
+    const message = `${sdkKey}${meetingNumber}${timestamp}${role}`;
+    const hash = crypto
+      .createHmac('sha256', sdkSecret)
+      .update(message)
+      .digest('base64');
+
+    const signature = Buffer.from(
+      `${sdkKey}.${meetingNumber}.${timestamp}.${role}.${hash}`,
+    ).toString('base64');
+
+    return { signature, sdkKey };
+  }
+
+  // ──────────────────────────────────────────────────────────────
   //  verifyWebhookSignature
   // ──────────────────────────────────────────────────────────────
 

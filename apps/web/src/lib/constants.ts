@@ -50,4 +50,5 @@ export const API_ROUTES = {
   ADMIN_RECORDINGS: '/admin/recordings',
   ADMIN_TOPICS: '/admin/topics',
   ADMIN_UPLOAD_URL: '/admin/upload-url',
+  ZOOM_SIGNATURE: '/zoom/signature',
 } as const;
