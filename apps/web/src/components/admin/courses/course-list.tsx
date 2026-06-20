@@ -18,14 +18,27 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
 
+  const revalidateServerCache = useCallback(async () => {
+    try {
+      await fetch('/api/revalidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '/admin/courses' }),
+      });
+    } catch {
+      // Revalidation is best-effort — the cache TTL will eventually expire
+    }
+  }, []);
+
   const refreshCourses = useCallback(async () => {
     try {
       const result = await getCourses(token);
       setCourses(result.items);
+      revalidateServerCache();
     } catch {
       // silently fail — data stays as last-known state
     }
-  }, [token]);
+  }, [token, revalidateServerCache]);
 
   const openBatchModal = (courseId: string) => {
     setSelectedCourseId(courseId);
