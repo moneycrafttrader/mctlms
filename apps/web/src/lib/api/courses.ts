@@ -122,6 +122,43 @@ export interface StudentProfile {
   phone?: string;
 }
 
+/**
+ * Fetch all batches (paginated, optionally filtered by active status).
+ */
+export async function getAllBatches(
+  params: { isActive?: boolean; page?: number; limit?: number } = {},
+  token?: string,
+) {
+  const qp = new URLSearchParams();
+  if (params.isActive !== undefined) qp.set('isActive', String(params.isActive));
+  if (params.page) qp.set('page', String(params.page));
+  if (params.limit) qp.set('limit', String(params.limit));
+  const qs = qp.toString();
+  return fetchApi<{ items: Batch[]; total: number }>(
+    `${API_ROUTES.BATCHES}${qs ? `?${qs}` : ''}`,
+    { token },
+  );
+}
+
+/**
+ * Assign one or more existing students to a batch.
+ * POST /batches/:batchId/students  { studentIds: string[] }
+ */
+export async function assignStudentsToBatch(
+  batchId: string,
+  studentIds: string[],
+  token?: string,
+) {
+  return fetchApi<{ enrolledCount: number }>(
+    `${API_ROUTES.BATCHES}/${batchId}/students`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ studentIds }),
+      token,
+    },
+  );
+}
+
 export interface AddStudentResponse {
   id: string;
   name: string;

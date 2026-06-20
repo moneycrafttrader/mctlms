@@ -2,6 +2,7 @@ export const ROUTES = {
   LOGIN: '/login',
   ADMIN: {
     HOME: '/admin',
+    STUDENTS: '/admin/students',
     COURSES: '/admin/courses',
     RECORDINGS: '/admin/recordings',
     BULK_UPLOAD: '/admin/bulk-upload',

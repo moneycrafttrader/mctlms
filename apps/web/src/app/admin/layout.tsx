@@ -3,7 +3,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   BookOpen,
-  Upload,
+  Users,
   IndianRupee,
   Settings,
   Video,
@@ -13,9 +13,9 @@ import { ROUTES } from '@/lib/constants';
 
 const navItems = [
   { label: 'Dashboard', href: ROUTES.ADMIN.HOME, icon: LayoutDashboard },
+  { label: 'Students', href: ROUTES.ADMIN.STUDENTS, icon: Users },
   { label: 'Courses & Batches', href: ROUTES.ADMIN.COURSES, icon: BookOpen },
   { label: 'Recordings', href: ROUTES.ADMIN.RECORDINGS, icon: Video },
-  { label: 'Bulk Upload', href: ROUTES.ADMIN.BULK_UPLOAD, icon: Upload },
   { label: 'Payments & Invoices', href: ROUTES.ADMIN.PAYMENTS, icon: IndianRupee },
   { label: 'Business Config', href: ROUTES.ADMIN.BUSINESS_CONFIG, icon: Settings },
 ];

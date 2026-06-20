@@ -1,12 +1,20 @@
 import { fetchApi } from '@/lib/api-client';
 import { API_ROUTES } from '@/lib/constants';
 
+export interface BatchRef {
+  id: string;
+  name: string;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   role: string;
   is_active: boolean;
+  created_at: string;
+  batches?: BatchRef[];
 }
 
 /**
@@ -35,4 +43,20 @@ export async function getUsers(
  */
 export async function getStudents(token?: string) {
   return getUsers({ role: 'student', limit: 200 }, token);
+}
+
+/**
+ * Create a single user (admin-only). Password is auto-generated client-side.
+ * POST /users
+ */
+export async function createUser(
+  data: { name: string; email: string; role: string; phone?: string },
+  token?: string,
+) {
+  const password = crypto.randomUUID().replace(/-/g, '').slice(0, 10) + 'Aa1!';
+  return fetchApi<User>(API_ROUTES.USERS, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, password }),
+    token,
+  });
 }

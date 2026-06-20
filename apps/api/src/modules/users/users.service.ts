@@ -55,9 +55,14 @@ export class UsersService {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
+    const selectFields =
+      role === UserRole.STUDENT
+        ? '*, batch_students(batches(id, name))'
+        : '*';
+
     let query = this.supabaseService.client
       .from(TABLES.PROFILES)
-      .select('*', { count: 'exact' });
+      .select(selectFields, { count: 'exact' });
 
     if (role) {
       query = query.eq('role', role);
@@ -72,8 +77,21 @@ export class UsersService {
       throw new BadRequestException('Could not retrieve users');
     }
 
+    const items = (data ?? []).map((entry: any) => {
+      if (role === UserRole.STUDENT) {
+        const { batch_students, ...profile } = entry;
+        return {
+          ...profile,
+          batches: (batch_students ?? [])
+            .map((bs: any) => bs.batches)
+            .filter(Boolean),
+        };
+      }
+      return entry;
+    });
+
     return {
-      items: (data as unknown as UserType[]) ?? [],
+      items: (items as unknown as UserType[]) ?? [],
       total: count ?? 0,
       page,
       limit,
