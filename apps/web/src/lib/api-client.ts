@@ -19,15 +19,29 @@ export async function fetchApi<T = any>(
   const url = `${API_URL}${endpoint}`;
   let token = options?.token;
 
-  // If no explicit token was passed, try reading from the client-side
-  // cookie (set by the login page on the Vercel domain). The cookie is
-  // never sent to Render automatically because it's scoped to Vercel.
-  if (!token && typeof document !== 'undefined') {
-    const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]*)/);
-    token = match ? match[1] : undefined;
+  // Token resolution strategy:
+  //   1. If the caller explicitly passed a token, use it.
+  //   2. On the SERVER (SSR), read the access_token cookie from the
+  //      incoming request via next/headers so that Server Components
+  //      can authenticate fetches to the NestJS backend.  This is
+  //      needed because the Vercel-domain cookie is never sent to
+  //      Render automatically.
+  //   3. On the CLIENT, fall back to parsing document.cookie (set by
+  //      the login page on the Vercel domain).
+  if (!token) {
+    if (typeof window === 'undefined') {
+      try {
+        const { cookies } = await import('next/headers');
+        const cookieStore = cookies();
+        token = cookieStore.get('access_token')?.value;
+      } catch {
+        // Not in a request context (build step, test runner, etc.)
+      }
+    } else {
+      const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]*)/);
+      token = match ? match[1] : undefined;
+    }
   }
-
-  console.log('[API Client] Executing fetch to:', url);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -63,7 +77,6 @@ export async function fetchApi<T = any>(
 
   const data = await response.json();
 
-  // Unwrap NestJS ResponseTransformInterceptor wrapper if present
   if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
     return data.data as T;
   }
