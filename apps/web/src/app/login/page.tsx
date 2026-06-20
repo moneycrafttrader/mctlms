@@ -23,19 +23,16 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const { token, user } = result;
+      const { user } = result;
 
-      // Redirect based on role
-      if (user.role === 'admin') {
-        router.push(ROUTES.ADMIN.HOME);
-      } else if (user.role === 'student') {
+      // Navigate based on role. router.push triggers middleware on the
+      // target route, which reads the httpOnly access_token cookie that
+      // the backend Set-Cookie header just set.
+      if (user.role === 'student') {
         router.push(ROUTES.STUDENT.HOME);
       } else {
         router.push(ROUTES.ADMIN.HOME);
       }
-
-      // Refresh so middleware/layout picks up the new auth cookies
-      router.refresh();
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
