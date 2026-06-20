@@ -305,6 +305,29 @@ export class MuxService {
   }
 
   // ──────────────────────────────────────────────────────────────
+  //  deleteAsset
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Delete a video asset from Mux by its asset ID.
+   * Called when an admin deletes a video from the LMS.
+   * 404s from Mux are silently ignored (asset may have been deleted manually).
+   */
+  async deleteAsset(muxAssetId: string): Promise<void> {
+    try {
+      await this.muxClient.video.assets.delete(muxAssetId);
+      this.logger.log(`Deleted Mux asset ${muxAssetId}`);
+    } catch (err: any) {
+      if (err?.status === 404) {
+        this.logger.warn(`Mux asset ${muxAssetId} already deleted (404)`);
+        return;
+      }
+      this.logger.error(`Failed to delete Mux asset ${muxAssetId}: ${err.message}`, err.stack);
+      throw err;
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────
   //  verifyWebhookSignature
   // ──────────────────────────────────────────────────────────────
 

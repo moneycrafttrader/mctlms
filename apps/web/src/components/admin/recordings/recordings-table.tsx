@@ -74,7 +74,7 @@ export function RecordingsTable({
 
   const handleDelete = async (video: AdminVideo) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete "${video.title}"?\n\nThis action cannot be undone. The Mux asset will remain in your Mux account but the video will be removed from the LMS.`,
+      `Are you sure you want to delete "${video.title}"?\n\nThe video will be deleted from both the LMS and Mux. This cannot be undone.`,
     );
 
     if (!confirmed) return;

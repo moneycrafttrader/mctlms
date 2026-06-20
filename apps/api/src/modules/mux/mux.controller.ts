@@ -152,6 +152,29 @@ export class MuxController {
         break;
       }
 
+      // ── video.asset.deleted ────────────────────────────────
+      // An asset was deleted in the Mux dashboard — remove the orphan DB row.
+      case 'video.asset.deleted': {
+        const deletedAssetId = event.object?.id;
+        if (deletedAssetId) {
+          try {
+            const { error, count } = await this.supabaseService.client
+              .from(TABLES.VIDEOS)
+              .delete()
+              .eq('mux_asset_id', deletedAssetId);
+
+            if (error) {
+              this.logger.error(`Failed to delete DB row for asset ${deletedAssetId}: ${error.message}`, error.stack);
+            } else {
+              this.logger.log(`Deleted DB row for Mux asset ${deletedAssetId} (${count ?? 0} rows)`);
+            }
+          } catch (err) {
+            this.logger.error(`Unexpected error handling deleted asset ${deletedAssetId}: ${(err as Error).message}`, (err as Error).stack);
+          }
+        }
+        break;
+      }
+
       default:
         this.logger.warn(`Unhandled Mux event type: ${event.type}`);
     }

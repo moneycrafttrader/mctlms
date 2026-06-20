@@ -492,7 +492,7 @@ export class VideosService {
   async deleteVideo(id: string) {
     const { data: video } = await this.supabaseService.client
       .from(TABLES.VIDEOS)
-      .select('id')
+      .select('id, mux_asset_id')
       .eq('id', id)
       .single();
 
@@ -500,6 +500,12 @@ export class VideosService {
       throw new NotFoundException('Video not found');
     }
 
+    // Delete from Mux first (if it has a Mux asset) — ignore 404s
+    if (video.mux_asset_id) {
+      await this.muxService.deleteAsset(video.mux_asset_id);
+    }
+
+    // Then delete the row from Supabase
     const { error } = await this.supabaseService.client
       .from(TABLES.VIDEOS)
       .delete()
