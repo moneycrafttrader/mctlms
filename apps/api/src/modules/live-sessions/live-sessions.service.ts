@@ -85,7 +85,6 @@ export class LiveSessionsService {
 
     // ── Step 3: Create Zoom webinar ────────────────────────────
     const webinar = await this.zoomService.createWebinar({
-      hostZoomUserId: teacher.zoom_user_id,
       topic: dto.topic,
       agenda: dto.agenda,
       startTime: dto.startTime,

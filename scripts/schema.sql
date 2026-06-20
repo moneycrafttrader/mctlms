@@ -19,6 +19,8 @@ DROP TABLE IF EXISTS recordings CASCADE;
 DROP TABLE IF EXISTS test_attempts CASCADE;
 DROP TABLE IF EXISTS test_questions CASCADE;
 DROP TABLE IF EXISTS tests CASCADE;
+DROP TABLE IF EXISTS webinar_attendance CASCADE;
+DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS attendance CASCADE;
 DROP TABLE IF EXISTS session_registrants CASCADE;
 DROP TABLE IF EXISTS session_batches CASCADE;
@@ -131,7 +133,41 @@ CREATE TABLE batch_teachers (
 CREATE INDEX idx_batch_students_user ON batch_students(user_id);
 CREATE INDEX idx_batch_teachers_user ON batch_teachers(user_id);
 
--- 2.6 payment_plans and payment_installments (EMI system)
+-- 2.6 sessions and webinar_attendance (live trading sessions)
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+  zoom_meeting_id TEXT NOT NULL,
+  start_time TIMESTAMPTZ NOT NULL,
+  title TEXT NOT NULL,
+  is_live BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_sessions_batch ON sessions(batch_id);
+CREATE INDEX idx_sessions_start ON sessions(start_time);
+CREATE INDEX idx_sessions_live ON sessions(is_live) WHERE is_live = TRUE;
+
+CREATE TABLE webinar_attendance (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  duration_minutes INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (session_id, user_id)
+);
+
+CREATE INDEX idx_webinar_attendance_session ON webinar_attendance(session_id);
+CREATE INDEX idx_webinar_attendance_user ON webinar_attendance(user_id);
+
+CREATE TRIGGER set_updated_at_sessions
+  BEFORE UPDATE ON sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- 2.7 payment_plans and payment_installments (EMI system)
 CREATE TABLE payment_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,

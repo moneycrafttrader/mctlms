@@ -21,13 +21,14 @@ export interface User {
  * Fetch users filtered by role (e.g. 'student'), with pagination.
  */
 export async function getUsers(
-  params: { role?: string; page?: number; limit?: number } = {},
+  params: { role?: string; page?: number; limit?: number; includeInactive?: boolean } = {},
   token?: string,
 ) {
   const query = new URLSearchParams();
   if (params.role) query.set('role', params.role);
   if (params.page) query.set('page', String(params.page));
   if (params.limit) query.set('limit', String(params.limit));
+  if (params.includeInactive) query.set('includeInactive', 'true');
 
   const qs = query.toString();
   const endpoint = `${API_ROUTES.USERS}${qs ? `?${qs}` : ''}`;
@@ -36,6 +37,17 @@ export async function getUsers(
     endpoint,
     { token },
   );
+}
+
+/**
+ * Soft-delete a user — sets is_active = false.
+ * DELETE /users/:id
+ */
+export async function deleteUser(id: string, token?: string) {
+  return fetchApi<{ deleted: boolean }>(`${API_ROUTES.USERS}/${id}`, {
+    method: 'DELETE',
+    token,
+  });
 }
 
 /**

@@ -25,8 +25,6 @@ import axios from 'axios';
 import * as crypto from 'crypto';
 
 export interface CreateWebinarDto {
-  /** Zoom user ID of the teacher who will host */
-  hostZoomUserId: string;
   /** Display title of the webinar */
   topic: string;
   /** Optional description shown in Zoom's UI */
@@ -142,29 +140,40 @@ export class ZoomService {
   /**
    * Create a Zoom Webinar via the Zoom API.
    *
+   * Uses the account-level endpoint (/users/me/webinars) so the webinar lives
+   * under the LMS Zoom account, not an individual teacher. This gives us full
+   * control over security settings (practice session, recording, registration).
+   *
+   * Key settings:
+   *   - type: 5 = scheduled webinar
+   *   - practice_session: true = host can test before going live
+   *   - allow_attendee_to_record: false = students cannot record
+   *   - approval_type: 0 = auto-approve registrations
+   *
    * Steps:
-   *   1. POST /users/{hostZoomUserId}/webinars with webinar settings
+   *   1. POST /users/me/webinars with webinar settings
    *   2. Return the webinar ID, join URL, and host start URL
    */
   async createWebinar(dto: CreateWebinarDto): Promise<ZoomWebinarResult> {
-    const data = await this.zoomRequest('POST', `/users/${dto.hostZoomUserId}/webinars`, {
+    const data = await this.zoomRequest('POST', '/users/me/webinars', {
       topic: dto.topic,
-      type: 5, // 5 = Webinar
+      type: 5,
       start_time: dto.startTime,
       duration: dto.durationMinutes,
       timezone: 'Asia/Kolkata',
       settings: {
         host_video: true,
         panelists_video: true,
-        auto_recording: 'cloud',
-        approval_type: 0, // 0 = automatically approve
+        auto_recording: 'none',
+        approval_type: 0,
+        practice_session: true,
         registrants_email_notification: true,
+        allow_attendee_to_record: false,
         question_and_answer: {
           enable: true,
           allow_anonymous_questions: false,
         },
         allow_multiple_devices: false,
-        panelists_invitation_email_notification: true,
         contact_name: 'LMS Admin',
         show_share_button: false,
         allow_attendees_to_chat: 'host_and_panelists',

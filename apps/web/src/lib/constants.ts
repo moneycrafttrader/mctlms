@@ -44,4 +44,5 @@ export const API_ROUTES = {
   },
   EMAIL: '/email/test',
   INVOICES: '/invoices',
+  ADMIN_SESSIONS: '/admin/sessions',
 } as const;

@@ -16,6 +16,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -43,11 +44,13 @@ export class UsersController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('role') role?: UserRole,
+    @Query('includeInactive') includeInactive?: string,
   ) {
     return this.usersService.findAll(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
       role,
+      includeInactive === 'true',
     );
   }
 
@@ -97,6 +100,17 @@ export class UsersController {
   @Post(':id/suspend')
   suspend(@Param('id') id: string) {
     return this.usersService.suspend(id);
+  }
+
+  /**
+   * DELETE /users/:id
+   *
+   * Soft-delete a user — sets is_active = false and force-logs them out.
+   */
+  @Roles(UserRole.ADMIN)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.usersService.remove(id);
   }
 
   /**

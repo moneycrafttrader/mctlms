@@ -53,6 +53,7 @@ export class UsersService {
     page = 1,
     limit = 20,
     role?: UserRole,
+    includeInactive = false,
   ): Promise<PaginatedResponse<UserType>> {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
@@ -68,6 +69,10 @@ export class UsersService {
 
     if (role) {
       query = query.eq('role', role);
+    }
+
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
     }
 
     const { data, error, count } = await query
@@ -262,6 +267,36 @@ export class UsersService {
 
     await this.authService.forceLogoutUser(id);
     this.logger.log(`User ${id} suspended and logged out`);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  remove (soft-delete)
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Soft-delete a user — sets is_active to false and force-logs them out.
+   * The row stays in the database for analytics; the user just can't log in.
+   *
+   * Steps:
+   *   1. Set is_active = false in TABLES.PROFILES
+   *   2. Call authService.forceLogoutUser() to invalidate their Redis session
+   *   3. Return success indicator
+   */
+  async remove(id: string): Promise<{ deleted: boolean }> {
+    const { error } = await this.supabaseService.client
+      .from(TABLES.PROFILES)
+      .update({ is_active: false })
+      .eq('id', id);
+
+    if (error) {
+      this.logger.error(`Failed to soft-delete user ${id}: ${error.message}`);
+      throw new BadRequestException('Failed to remove user');
+    }
+
+    await this.authService.forceLogoutUser(id);
+    this.logger.log(`User ${id} soft-deleted and logged out`);
+
+    return { deleted: true };
   }
 
   // ──────────────────────────────────────────────────────────────
