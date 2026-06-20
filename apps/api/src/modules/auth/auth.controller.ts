@@ -17,9 +17,10 @@ import {
   Get,
   Body,
   Req,
+  Res,
   Logger,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -41,11 +42,21 @@ export class AuthController {
    */
   @Public()
   @Post('login')
-  async login(@Body() dto: LoginDto, @Req() req: Request) {
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const ip = (req.ip || req.headers['x-forwarded-for'] || 'unknown') as string;
     const userAgent = (req.headers['user-agent'] || 'unknown') as string;
 
-    return this.authService.login(dto, ip, userAgent);
+    const result = await this.authService.login(dto, ip, userAgent);
+
+    res.cookie('access_token', result.token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    return result;
   }
 
   /**

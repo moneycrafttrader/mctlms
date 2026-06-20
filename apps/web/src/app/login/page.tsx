@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchApi, ApiError } from '@/lib/api-client';
 import { ROUTES, API_ROUTES } from '@/lib/constants';
-import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,13 +24,6 @@ export default function LoginPage() {
       });
 
       const { token, user } = result;
-
-      // Set Supabase session for SSR middleware
-      const supabase = createClient();
-      await supabase.auth.setSession({
-        access_token: token,
-        refresh_token: '',
-      });
 
       // Redirect based on role
       if (user.role === 'admin') {
