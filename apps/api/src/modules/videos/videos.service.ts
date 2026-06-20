@@ -564,7 +564,7 @@ export class VideosService {
 
     let query = this.supabaseService.client
       .from(TABLES.VIDEOS)
-      .select(`*, topics(name), ${TABLES.VIDEO_BATCHES}(batch_id)`, { count: 'exact' })
+      .select(`*, topics(name), ${TABLES.VIDEO_BATCHES}!video_id(batch_id)`, { count: 'exact' })
       .order('created_at', { ascending: false });
 
     if (topicId) {
