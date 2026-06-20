@@ -23,11 +23,15 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const { user } = result;
+      const { token, user } = result;
 
-      // Navigate based on role. router.push triggers middleware on the
-      // target route, which reads the httpOnly access_token cookie that
-      // the backend Set-Cookie header just set.
+      // The backend also sets an httpOnly cookie on its own domain
+      // (onrender.com), but the Next.js middleware runs on Vercel and
+      // can't read cross-domain cookies. We manually set the cookie
+      // on the current (Vercel) domain so the middleware finds it.
+      document.cookie =
+        'access_token=' + token + '; path=/; max-age=86400; secure; samesite=lax';
+
       if (user.role === 'student') {
         router.push(ROUTES.STUDENT.HOME);
       } else {

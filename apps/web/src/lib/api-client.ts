@@ -17,7 +17,15 @@ export async function fetchApi<T = any>(
   options?: RequestInit & { token?: string },
 ): Promise<T> {
   const url = `${API_URL}${endpoint}`;
-  const token = options?.token;
+  let token = options?.token;
+
+  // If no explicit token was passed, try reading from the client-side
+  // cookie (set by the login page on the Vercel domain). The cookie is
+  // never sent to Render automatically because it's scoped to Vercel.
+  if (!token && typeof document !== 'undefined') {
+    const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]*)/);
+    token = match ? match[1] : undefined;
+  }
 
   console.log('[API Client] Executing fetch to:', url);
 
