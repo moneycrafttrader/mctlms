@@ -7,6 +7,7 @@ import {
   IndianRupee,
   Settings,
   Video,
+  Calendar,
   LogOut,
 } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
@@ -15,6 +16,7 @@ const navItems = [
   { label: 'Dashboard', href: ROUTES.ADMIN.HOME, icon: LayoutDashboard },
   { label: 'Students', href: ROUTES.ADMIN.STUDENTS, icon: Users },
   { label: 'Courses & Batches', href: ROUTES.ADMIN.COURSES, icon: BookOpen },
+  { label: 'Live Sessions', href: ROUTES.ADMIN.SESSIONS, icon: Calendar },
   { label: 'Recordings', href: ROUTES.ADMIN.RECORDINGS, icon: Video },
   { label: 'Payments & Invoices', href: ROUTES.ADMIN.PAYMENTS, icon: IndianRupee },
   { label: 'Business Config', href: ROUTES.ADMIN.BUSINESS_CONFIG, icon: Settings },

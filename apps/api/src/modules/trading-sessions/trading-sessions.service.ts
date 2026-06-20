@@ -47,4 +47,41 @@ export class TradingSessionsService {
       startUrl: webinar.startUrl,
     };
   }
+
+  async findAll() {
+    const { data, error } = await this.supabaseService.client
+      .from(TABLES.SESSIONS)
+      .select('*, batches!inner(name)')
+      .order('start_time', { ascending: false });
+
+    if (error) {
+      this.logger.error(`Failed to fetch sessions: ${error.message}`);
+      throw new BadRequestException('Could not retrieve sessions');
+    }
+
+    return (data ?? []).map((s: any) => ({
+      id: s.id,
+      batch_id: s.batch_id,
+      batchName: s.batches?.name ?? '',
+      zoom_meeting_id: s.zoom_meeting_id,
+      start_time: s.start_time,
+      title: s.title,
+      is_live: s.is_live,
+      created_at: s.created_at,
+    }));
+  }
+
+  async remove(id: string): Promise<{ deleted: boolean }> {
+    const { error } = await this.supabaseService.client
+      .from(TABLES.SESSIONS)
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      this.logger.error(`Failed to delete session ${id}: ${error.message}`);
+      throw new BadRequestException('Failed to delete session');
+    }
+
+    return { deleted: true };
+  }
 }

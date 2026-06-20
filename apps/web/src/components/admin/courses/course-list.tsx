@@ -11,6 +11,7 @@ import {
   type Batch,
   getCourses,
   deleteBatch,
+  deleteCourse,
 } from '@/lib/api/courses';
 
 interface CourseListProps {
@@ -26,6 +27,7 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
 
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [deletingBatch, setDeletingBatch] = useState<Batch | null>(null);
+  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
 
   const revalidateServerCache = useCallback(async () => {
     try {
@@ -69,6 +71,17 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
     }
   };
 
+  const confirmDeleteCourse = async () => {
+    if (!deletingCourse) return;
+    try {
+      await deleteCourse(deletingCourse.id, token);
+      setDeletingCourse(null);
+      refreshCourses();
+    } catch {
+      // silently fail
+    }
+  };
+
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
@@ -97,14 +110,23 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
             >
               <div className="mb-3 flex items-start justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">{course.name}</h3>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    course.is_active
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  {course.is_active ? 'Active' : 'Inactive'}
+                <span className="flex items-center gap-1">
+                  <button
+                    onClick={() => setDeletingCourse(course)}
+                    className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600"
+                    title="Delete course"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      course.is_active
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    {course.is_active ? 'Active' : 'Inactive'}
+                  </span>
                 </span>
               </div>
 
@@ -214,7 +236,7 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
         )}
       </Modal>
 
-      {/* Delete Confirmation */}
+      {/* Delete Batch Confirmation */}
       <ConfirmDialog
         isOpen={!!deletingBatch}
         title="Delete Batch"
@@ -222,6 +244,16 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
         confirmLabel="Delete"
         onConfirm={confirmDeleteBatch}
         onCancel={() => setDeletingBatch(null)}
+      />
+
+      {/* Delete Course Confirmation */}
+      <ConfirmDialog
+        isOpen={!!deletingCourse}
+        title="Archive Course"
+        message={`Are you sure you want to archive "${deletingCourse?.name}"? It will be hidden from the dashboard.`}
+        confirmLabel="Archive"
+        onConfirm={confirmDeleteCourse}
+        onCancel={() => setDeletingCourse(null)}
       />
     </>
   );

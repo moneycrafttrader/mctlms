@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
 import { UserRole } from '@lms/shared-types';
 import { TradingSessionsService } from './trading-sessions.service';
 import { CreateTradingSessionDto } from './dto/create-trading-session.dto';
@@ -12,5 +12,17 @@ export class TradingSessionsController {
   @Post()
   create(@Body() dto: CreateTradingSessionDto) {
     return this.tradingSessionsService.create(dto);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Get()
+  findAll() {
+    return this.tradingSessionsService.findAll();
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.tradingSessionsService.remove(id);
   }
 }

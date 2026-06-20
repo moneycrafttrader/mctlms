@@ -8,6 +8,7 @@ export const ROUTES = {
     BULK_UPLOAD: '/admin/bulk-upload',
     PAYMENTS: '/admin/payments',
     BUSINESS_CONFIG: '/admin/business-config',
+    SESSIONS: '/admin/sessions',
   },
   STUDENT: {
     HOME: '/student',

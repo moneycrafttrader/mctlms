@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -84,5 +85,11 @@ export class CoursesController {
   @Roles(UserRole.ADMIN)
   activate(@Param('id', ParseUUIDPipe) id: string) {
     return this.coursesService.activate(id);
+  }
+
+  @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.coursesService.deactivate(id);
   }
 }

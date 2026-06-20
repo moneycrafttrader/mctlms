@@ -101,6 +101,17 @@ export async function createCourse(
 }
 
 /**
+ * Soft-delete a course (archive).
+ * DELETE /courses/:id
+ */
+export async function deleteCourse(id: string, token?: string) {
+  return fetchApi<Course>(`${API_ROUTES.COURSES}/${id}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
+/**
  * Create a batch under a course.
  */
 export async function createBatch(

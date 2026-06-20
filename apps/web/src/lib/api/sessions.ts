@@ -30,3 +30,14 @@ export async function scheduleSession(
     token,
   });
 }
+
+export async function getSessions(token?: string) {
+  return fetchApi<ScheduledSession[]>(API_ROUTES.ADMIN_SESSIONS, { token });
+}
+
+export async function deleteSession(id: string, token?: string) {
+  return fetchApi<{ deleted: boolean }>(`${API_ROUTES.ADMIN_SESSIONS}/${id}`, {
+    method: 'DELETE',
+    token,
+  });
+}
