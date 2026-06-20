@@ -27,5 +27,6 @@ export const TABLES = {
   TEST_ATTEMPTS: 'test_attempts',
   BULK_UPLOAD_JOBS: 'bulk_upload_jobs',
   SESSIONS: 'sessions',
+  SESSION_BATCH_MAPPINGS: 'session_batch_mappings',
   WEBINAR_ATTENDANCE: 'webinar_attendance',
 } as const;

@@ -144,31 +144,44 @@ export class ZoomService {
    * under the LMS Zoom account, not an individual teacher. This gives us full
    * control over security settings (practice session, recording, registration).
    *
+   * Timezone handling:
+   *   - The frontend sends start_time as a UTC ISO-8601 string (e.g. "2026-07-15T04:30:00.000Z").
+   *   - We keep the value as-is — Zoom receives UTC and converts to Asia/Kolkata
+   *     for its UI, so there is no double-offset drift.
+   *
    * Key settings:
    *   - type: 5 = scheduled webinar
+   *   - auto_recording: 'cloud' = recording starts automatically
    *   - practice_session: true = host can test before going live
-   *   - allow_attendee_to_record: false = students cannot record
-   *   - approval_type: 0 = auto-approve registrations
+   *   - include_attendees_in_in_meeting_reports: true = per-attendee timeline in reports
+   *   - allow_multiple_devices: false = restrict to one device per attendee
    *
    * Steps:
    *   1. POST /users/me/webinars with webinar settings
    *   2. Return the webinar ID, join URL, and host start URL
    */
   async createWebinar(dto: CreateWebinarDto): Promise<ZoomWebinarResult> {
+    // The frontend always sends startTime as a UTC ISO-8601 string
+    // (e.g. new Date(...).toISOString()). We pass it through unchanged
+    // so Zoom interprets it as UTC — the timezone field below tells
+    // Zoom which local time to display the webinar in.
+    const startTime = dto.startTime;
+
     const data = await this.zoomRequest('POST', '/users/me/webinars', {
       topic: dto.topic,
       type: 5,
-      start_time: dto.startTime,
+      start_time: startTime,
       duration: dto.durationMinutes,
       timezone: 'Asia/Kolkata',
       settings: {
         host_video: true,
         panelists_video: true,
-        auto_recording: 'none',
+        auto_recording: 'cloud',
         approval_type: 0,
         practice_session: true,
         registrants_email_notification: true,
         allow_attendee_to_record: false,
+        include_attendees_in_in_meeting_reports: true,
         question_and_answer: {
           enable: true,
           allow_anonymous_questions: false,

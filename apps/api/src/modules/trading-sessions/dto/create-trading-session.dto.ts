@@ -1,7 +1,9 @@
 import {
   IsString,
   IsDateString,
+  IsArray,
   IsUUID,
+  ArrayMinSize,
   MinLength,
 } from 'class-validator';
 
@@ -13,6 +15,8 @@ export class CreateTradingSessionDto {
   @IsDateString()
   startTime: string;
 
-  @IsUUID('4')
-  batchId: string;
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @ArrayMinSize(1)
+  batchIds: string[];
 }

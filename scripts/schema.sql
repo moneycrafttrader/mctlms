@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS recordings CASCADE;
 DROP TABLE IF EXISTS test_attempts CASCADE;
 DROP TABLE IF EXISTS test_questions CASCADE;
 DROP TABLE IF EXISTS tests CASCADE;
+DROP TABLE IF EXISTS session_batch_mappings CASCADE;
 DROP TABLE IF EXISTS webinar_attendance CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS attendance CASCADE;
@@ -148,6 +149,15 @@ CREATE TABLE sessions (
 CREATE INDEX idx_sessions_batch ON sessions(batch_id);
 CREATE INDEX idx_sessions_start ON sessions(start_time);
 CREATE INDEX idx_sessions_live ON sessions(is_live) WHERE is_live = TRUE;
+
+CREATE TABLE session_batch_mappings (
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  batch_id UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+  PRIMARY KEY (session_id, batch_id)
+);
+
+CREATE INDEX idx_sbm_session ON session_batch_mappings(session_id);
+CREATE INDEX idx_sbm_batch ON session_batch_mappings(batch_id);
 
 CREATE TABLE webinar_attendance (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

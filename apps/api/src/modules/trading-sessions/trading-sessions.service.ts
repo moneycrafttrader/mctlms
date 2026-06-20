@@ -27,7 +27,6 @@ export class TradingSessionsService {
     const { data: session, error } = await this.supabaseService.client
       .from(TABLES.SESSIONS)
       .insert({
-        batch_id: dto.batchId,
         zoom_meeting_id: webinar.webinarId,
         start_time: dto.startTime,
         title: dto.title,
@@ -36,22 +35,48 @@ export class TradingSessionsService {
       .select()
       .single();
 
-    if (error) {
-      this.logger.error(`Failed to save session: ${error.message}`);
+    if (error || !session) {
+      this.logger.error(`Failed to save session: ${error?.message}`);
       throw new BadRequestException('Failed to create session');
     }
 
+    const mappings = dto.batchIds.map((batchId) => ({
+      session_id: session.id,
+      batch_id: batchId,
+    }));
+
+    const { error: mapError } = await this.supabaseService.client
+      .from(TABLES.SESSION_BATCH_MAPPINGS)
+      .insert(mappings);
+
+    if (mapError) {
+      this.logger.error(`Failed to link batches: ${mapError.message}`);
+    }
+
+    const { data: batchNames } = await this.supabaseService.client
+      .from(TABLES.SESSION_BATCH_MAPPINGS)
+      .select('batches!inner(name)')
+      .eq('session_id', session.id);
+
     return {
-      ...session,
+      id: session.id,
+      zoom_meeting_id: session.zoom_meeting_id,
+      start_time: session.start_time,
+      title: session.title,
+      is_live: session.is_live,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
+      batchIds: dto.batchIds,
+      batchNames: (batchNames ?? []).map((b: any) => b.batches.name),
       joinUrl: webinar.joinUrl,
       startUrl: webinar.startUrl,
     };
   }
 
   async findAll() {
-    const { data, error } = await this.supabaseService.client
+    const { data: sessions, error } = await this.supabaseService.client
       .from(TABLES.SESSIONS)
-      .select('*, batches!inner(name)')
+      .select('*')
       .order('start_time', { ascending: false });
 
     if (error) {
@@ -59,15 +84,31 @@ export class TradingSessionsService {
       throw new BadRequestException('Could not retrieve sessions');
     }
 
-    return (data ?? []).map((s: any) => ({
+    if (!sessions || sessions.length === 0) return [];
+
+    const sessionIds = sessions.map((s: any) => s.id);
+
+    const { data: mappings } = await this.supabaseService.client
+      .from(TABLES.SESSION_BATCH_MAPPINGS)
+      .select('session_id, batches!inner(name)')
+      .in('session_id', sessionIds);
+
+    const batchMap = new Map<string, string[]>();
+    for (const m of mappings ?? []) {
+      const prev = batchMap.get((m as any).session_id) ?? [];
+      prev.push((m as any).batches.name);
+      batchMap.set((m as any).session_id, prev);
+    }
+
+    return (sessions ?? []).map((s: any) => ({
       id: s.id,
-      batch_id: s.batch_id,
-      batchName: s.batches?.name ?? '',
       zoom_meeting_id: s.zoom_meeting_id,
       start_time: s.start_time,
       title: s.title,
       is_live: s.is_live,
       created_at: s.created_at,
+      updated_at: s.updated_at,
+      batchNames: batchMap.get(s.id) ?? [],
     }));
   }
 

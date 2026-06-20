@@ -4,20 +4,20 @@ import { API_ROUTES } from '@/lib/constants';
 export interface ScheduleSessionData {
   title: string;
   startTime: string;
-  batchId: string;
+  batchIds: string[];
 }
 
 export interface ScheduledSession {
   id: string;
-  batch_id: string;
   zoom_meeting_id: string;
   start_time: string;
   title: string;
   is_live: boolean;
   created_at: string;
   updated_at: string;
-  joinUrl: string;
-  startUrl: string;
+  batchNames: string[];
+  joinUrl?: string;
+  startUrl?: string;
 }
 
 export async function scheduleSession(

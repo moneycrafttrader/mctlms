@@ -5,7 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { X, Loader2, Calendar, Clock, ChevronDown } from 'lucide-react';
+import {
+  X,
+  Loader2,
+  Calendar,
+  Clock,
+  ChevronDown,
+  Check,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { getAllBatches, type Batch } from '@/lib/api/courses';
 import { scheduleSession } from '@/lib/api/sessions';
@@ -17,7 +24,6 @@ interface ScheduleSessionModalProps {
 }
 
 const formSchema = z.object({
-  batchId: z.string().min(1, 'Please select a batch'),
   title: z.string().min(3, 'Meeting topic must be at least 3 characters'),
   startDate: z.string().min(1, 'Please select a date'),
   startTime: z.string().min(1, 'Please select a time'),
@@ -35,6 +41,8 @@ export function ScheduleSessionModal({
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loadingBatches, setLoadingBatches] = useState(true);
   const [fetchError, setFetchError] = useState('');
+  const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const {
     register,
@@ -44,7 +52,6 @@ export function ScheduleSessionModal({
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      batchId: '',
       title: '',
       startDate: '',
       startTime: '',
@@ -68,19 +75,43 @@ export function ScheduleSessionModal({
   useEffect(() => {
     if (isOpen) {
       reset();
+      setSelectedBatchIds(new Set());
+      setDropdownOpen(false);
       setFetchError('');
       fetchBatches();
     }
   }, [isOpen, reset, fetchBatches]);
 
+  const toggleBatch = (id: string) => {
+    setSelectedBatchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedBatchIds(new Set(batches.map((b) => b.id)));
+  };
+
+  const deselectAll = () => {
+    setSelectedBatchIds(new Set());
+  };
+
   const onSubmit = async (data: FormValues) => {
+    if (selectedBatchIds.size === 0) {
+      toast.error('Please select at least one batch');
+      return;
+    }
+
     try {
       const startTime = new Date(`${data.startDate}T${data.startTime}`);
       await scheduleSession(
         {
           title: data.title,
           startTime: startTime.toISOString(),
-          batchId: data.batchId,
+          batchIds: Array.from(selectedBatchIds),
         },
         token,
       );
@@ -91,6 +122,10 @@ export function ScheduleSessionModal({
       toast.error(err.message || 'Failed to schedule class');
     }
   };
+
+  const selectedLabels = batches
+    .filter((b) => selectedBatchIds.has(b.id))
+    .map((b) => b.name);
 
   if (!isOpen) return null;
 
@@ -121,30 +156,82 @@ export function ScheduleSessionModal({
             </div>
           )}
 
-          {/* Batch */}
+          {/* Batch Multi-Select */}
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Batch <span className="text-red-500">*</span>
+              Batches <span className="text-red-500">*</span>
             </label>
             <div className="relative">
-              <select
-                {...register('batchId')}
-                disabled={loadingBatches}
-                className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-left focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
               >
-                <option value="">
-                  {loadingBatches ? 'Loading batches...' : 'Select a batch'}
-                </option>
-                {batches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <span className={selectedLabels.length === 0 ? 'text-gray-400' : 'text-gray-900'}>
+                  {selectedLabels.length === 0
+                    ? loadingBatches
+                      ? 'Loading batches...'
+                      : 'Select batches...'
+                    : selectedLabels.join(', ')}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {dropdownOpen && (
+                <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {loadingBatches ? (
+                    <div className="flex items-center justify-center py-4 text-sm text-gray-400">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading...
+                    </div>
+                  ) : batches.length === 0 ? (
+                    <div className="py-4 text-center text-sm text-gray-400">
+                      No active batches
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3 border-b border-gray-100 px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={selectAll}
+                          className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={deselectAll}
+                          className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                        >
+                          Deselect All
+                        </button>
+                        <span className="ml-auto text-xs text-gray-400">
+                          {selectedBatchIds.size} selected
+                        </span>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {batches.map((b) => (
+                          <label
+                            key={b.id}
+                            className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedBatchIds.has(b.id)}
+                              onChange={() => toggleBatch(b.id)}
+                              className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            <span className="text-gray-700">{b.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-            {errors.batchId && (
-              <p className="mt-1 text-xs text-red-500">{errors.batchId.message}</p>
+            {selectedBatchIds.size === 0 && isSubmitting && (
+              <p className="mt-1 text-xs text-red-500">Please select at least one batch</p>
             )}
           </div>
 
@@ -211,9 +298,6 @@ export function ScheduleSessionModal({
               max={480}
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
-            {errors.duration && (
-              <p className="mt-1 text-xs text-red-500">{errors.duration.message}</p>
-            )}
           </div>
 
           {/* Footer */}

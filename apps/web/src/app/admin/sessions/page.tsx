@@ -174,7 +174,9 @@ function SessionTable({
                 {session.title}
               </td>
               <td className="px-5 py-4 text-gray-600">
-                {(session as any).batchName || '—'}
+                {session.batchNames?.length > 0
+                  ? session.batchNames.join(', ')
+                  : '—'}
               </td>
               <td className="px-5 py-4 text-gray-600">
                 {formatDateTime(session.start_time)}
@@ -206,9 +208,9 @@ function SessionTable({
                 </span>
               </td>
               <td className="px-5 py-4">
-                {(session as any).joinUrl ? (
+                {session.joinUrl ? (
                   <a
-                    href={(session as any).joinUrl}
+                    href={session.joinUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700"
