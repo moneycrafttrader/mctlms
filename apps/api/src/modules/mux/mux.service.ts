@@ -163,7 +163,7 @@ export class MuxService {
    *   2. Also update TABLES.VIDEOS if there's a matching record
    */
   async handleAssetReady(muxAssetId: string, durationSeconds: number): Promise<void> {
-    await this.supabaseService.client
+    const { error: recordingsErr } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
       .update({
         status: 'ready',
@@ -171,7 +171,11 @@ export class MuxService {
       })
       .eq('mux_asset_id', muxAssetId);
 
-    await this.supabaseService.client
+    if (recordingsErr) {
+      this.logger.error(`Failed to update RECORDINGS for asset ${muxAssetId}: ${recordingsErr.message}`, recordingsErr.stack);
+    }
+
+    const { error: videosErr } = await this.supabaseService.client
       .from(TABLES.VIDEOS)
       .update({
         status: 'ready',
@@ -179,7 +183,13 @@ export class MuxService {
       })
       .eq('mux_asset_id', muxAssetId);
 
-    this.logger.log(`Asset ${muxAssetId} is ready (${durationSeconds}s)`);
+    if (videosErr) {
+      this.logger.error(`Failed to update VIDEOS for asset ${muxAssetId}: ${videosErr.message}`, videosErr.stack);
+    }
+
+    if (!recordingsErr && !videosErr) {
+      this.logger.log(`Asset ${muxAssetId} is ready (${durationSeconds}s)`);
+    }
   }
 
   // ──────────────────────────────────────────────────────────────

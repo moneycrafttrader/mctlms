@@ -19,7 +19,11 @@ import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true tells NestJS's body-parser to preserve the exact byte
+  // sequence on req.rawBody.  The Mux webhook handler needs this to verify
+  // HMAC signatures — JSON.stringify(req.body) can produce a different
+  // string than the original body after a parse/stringify round-trip.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const logger = new Logger('Bootstrap');
   const configService = app.get(ConfigService);
 

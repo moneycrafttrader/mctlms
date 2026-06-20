@@ -4,13 +4,16 @@
  * Why this controller exists:
  *   - Receives HTTP callbacks from Mux when video events happen (asset ready, upload linked).
  *   - MUST be @Public() because Mux has no way to send a JWT token.
- *   - Verifies the webhook signature before processing any event.
+ *   - Verifies the webhook signature against the RAW body (req.rawBody) because
+ *     JSON.stringify(req.body) can produce a different string after a parse/stringify
+ *     round-trip, breaking the HMAC.
  *   - Always returns 200 — never throw errors to Mux or it will retry.
  *
  * A junior should know:
- *   - The raw body is needed for signature verification (HMAC signs the exact payload).
- *   - Only two event types are handled: video.asset.ready and video.upload.asset_created.
- *   - Unknown events are logged and ignored.
+ *   - main.ts passes rawBody: true to preserve the raw request buffer.
+ *   - Three event types are handled: video.upload.asset_created, video.asset.ready,
+ *     and video.asset.errored. Unknown events are logged as warnings.
+ *   - Every database operation has its own try/catch with full error logging.
  */
 import { Controller, Post, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
@@ -32,59 +35,62 @@ export class MuxController {
    * POST /mux/webhook
    *
    * Mux calls this when video processing events happen.
-   * We verify the signature, then process the event.
+   * We verify the signature against the raw body, then process the event.
    */
   @Public()
   @Post('webhook')
   async handleWebhook(@Req() req: Request) {
-    // Extract signature header
     const muxSignature = req.headers['mux-signature'] as string;
     if (!muxSignature) {
       this.logger.warn('Missing mux-signature header');
       return { message: 'ok' };
     }
 
-    // Get raw body (reconstructed from parsed JSON)
-    const rawBody = JSON.stringify(req.body);
-
-    // Verify signature
-    try {
-      this.muxService.verifyWebhookSignature(rawBody, muxSignature);
-    } catch {
-      this.logger.warn('Mux webhook signature verification failed');
+    // Use the raw body preserved by NestJS (rawBody: true in main.ts).
+    // This is critical: JSON.stringify(req.body) can produce a different
+    // string than the original payload after parse/stringify round-trip,
+    // which would break HMAC signature verification.
+    const rawBody = (req as any).rawBody;
+    if (!rawBody) {
+      this.logger.error('req.rawBody is empty — did main.ts forget rawBody: true?');
       return { message: 'ok' };
     }
 
-    const event = req.body as {
-      type: string;
-      object?: { id: string };
-      data?: Record<string, unknown>;
-    };
+    // Verify signature against the raw body
+    try {
+      this.muxService.verifyWebhookSignature(rawBody, muxSignature);
+      this.logger.log('Mux webhook signature verified');
+    } catch (err) {
+      this.logger.error(`Mux webhook signature verification failed: ${(err as Error).message}`, (err as Error).stack);
+      return { message: 'ok' };
+    }
+
+    // Parse the event (rawBody is JSON, parse it)
+    let event: { type: string; object?: { id: string }; data?: Record<string, unknown> };
+    try {
+      event = JSON.parse(rawBody);
+    } catch (err) {
+      this.logger.error(`Failed to parse webhook body: ${(err as Error).message}`, (err as Error).stack);
+      return { message: 'ok' };
+    }
 
     switch (event.type) {
-      // ── video.asset.ready ──────────────────────────────────
-      // Mux finished processing a video asset — update status to 'ready'
-      case 'video.asset.ready': {
-        const assetId = event.object?.id;
-        const duration = (event.data?.duration as number) ?? 0;
-
-        if (assetId) {
-          await this.muxService.handleAssetReady(assetId, duration);
-        }
-        break;
-      }
-
       // ── video.upload.asset_created ─────────────────────────
-      // A direct upload has been processed into an asset — link the asset ID
+      // Mux has linked a direct upload to a new asset.
+      // We update the video record (which already exists with mux_upload_id)
+      // with the asset ID and playback ID.
       case 'video.upload.asset_created': {
         const uploadId = event.object?.id;
         const assetId = (event.data?.asset_id as string) ?? '';
+        const playbackId = (event.data?.playback_ids as any)?.[0]?.id ?? '';
 
-        if (uploadId && assetId) {
-          // Get playback ID from the asset
-          const playbackId = (event.data?.playback_ids as any)?.[0]?.id ?? '';
+        if (!uploadId || !assetId) {
+          this.logger.warn(`video.upload.asset_created missing uploadId=${uploadId} assetId=${assetId}`);
+          break;
+        }
 
-          await this.supabaseService.client
+        try {
+          const { error } = await this.supabaseService.client
             .from(TABLES.VIDEOS)
             .update({
               mux_asset_id: assetId,
@@ -93,13 +99,61 @@ export class MuxController {
             })
             .eq('mux_upload_id', uploadId);
 
-          this.logger.log(`Upload ${uploadId} linked to asset ${assetId}`);
+          if (error) {
+            this.logger.error(`DB update failed for upload ${uploadId}: ${error.message}`, error.stack);
+          } else {
+            this.logger.log(`Upload ${uploadId} → asset ${assetId} (playback ${playbackId})`);
+          }
+        } catch (err) {
+          this.logger.error(`Unexpected error linking upload ${uploadId}: ${(err as Error).message}`, (err as Error).stack);
+        }
+        break;
+      }
+
+      // ── video.asset.ready ──────────────────────────────────
+      // Mux finished processing a video asset — update status to 'ready'.
+      case 'video.asset.ready': {
+        const assetId = event.object?.id;
+        const duration = (event.data?.duration as number) ?? 0;
+
+        if (!assetId) {
+          this.logger.warn('video.asset.ready missing assetId');
+          break;
+        }
+
+        try {
+          await this.muxService.handleAssetReady(assetId, duration);
+        } catch (err) {
+          this.logger.error(`Failed to handle asset ready ${assetId}: ${(err as Error).message}`, (err as Error).stack);
+        }
+        break;
+      }
+
+      // ── video.asset.errored ────────────────────────────────
+      // Mux failed to process the asset — update status to 'error'.
+      case 'video.asset.errored': {
+        const failedAssetId = event.object?.id;
+        if (failedAssetId) {
+          try {
+            const { error } = await this.supabaseService.client
+              .from(TABLES.VIDEOS)
+              .update({ status: 'error' })
+              .eq('mux_asset_id', failedAssetId);
+
+            if (error) {
+              this.logger.error(`Failed to mark asset ${failedAssetId} as error: ${error.message}`, error.stack);
+            } else {
+              this.logger.warn(`Asset ${failedAssetId} reported as errored by Mux`);
+            }
+          } catch (err) {
+            this.logger.error(`Unexpected error handling errored asset ${failedAssetId}: ${(err as Error).message}`, (err as Error).stack);
+          }
         }
         break;
       }
 
       default:
-        this.logger.log(`Unhandled Mux event: ${event.type}`);
+        this.logger.warn(`Unhandled Mux event type: ${event.type}`);
     }
 
     return { message: 'ok' };
