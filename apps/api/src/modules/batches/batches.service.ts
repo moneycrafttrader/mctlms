@@ -403,11 +403,7 @@ export class BatchesService {
 
     // Fire-and-forget welcome email — failure must NOT block enrollment
     try {
-      await this.emailService.sendWelcomeEmail(
-        dto.email,
-        name,
-        (batch as any).name ?? batchId,
-      );
+      await this.emailService.sendWelcomeEmail(dto.email, name);
     } catch (emailErr: any) {
       this.logger.error(
         `Welcome email failed for ${dto.email} in batch ${batchId}: ${emailErr.message}`,

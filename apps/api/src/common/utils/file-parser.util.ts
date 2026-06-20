@@ -6,6 +6,8 @@ export interface ParsedUser {
   name: string;
   email: string;
   phone?: string;
+  courseName?: string;
+  batchName?: string;
 }
 
 function normalizeRow(row: Record<string, any>): ParsedUser | null {
@@ -18,6 +20,12 @@ function normalizeRow(row: Record<string, any>): ParsedUser | null {
   const phoneKey = Object.keys(row).find(
     (k) => k.toLowerCase().replace(/[\s_-]/g, '') === 'phone' || k.toLowerCase().replace(/[\s_-]/g, '') === 'phonenumber' || k.toLowerCase().replace(/[\s_-]/g, '') === 'mobile',
   );
+  const courseKey = Object.keys(row).find(
+    (k) => k.toLowerCase().replace(/[\s_-]/g, '') === 'coursename' || k.toLowerCase().replace(/[\s_-]/g, '') === 'course',
+  );
+  const batchKey = Object.keys(row).find(
+    (k) => k.toLowerCase().replace(/[\s_-]/g, '') === 'batchname' || k.toLowerCase().replace(/[\s_-]/g, '') === 'batch',
+  );
 
   if (!nameKey || !emailKey) {
     return null;
@@ -26,12 +34,20 @@ function normalizeRow(row: Record<string, any>): ParsedUser | null {
   const name = String(row[nameKey] ?? '').trim();
   const email = String(row[emailKey] ?? '').trim();
   const phone = phoneKey ? String(row[phoneKey] ?? '').trim() : undefined;
+  const courseName = courseKey ? String(row[courseKey] ?? '').trim() : undefined;
+  const batchName = batchKey ? String(row[batchKey] ?? '').trim() : undefined;
 
   if (!name || !email) {
     return null;
   }
 
-  return { name, email, phone: phone || undefined };
+  return {
+    name,
+    email,
+    phone: phone || undefined,
+    courseName: courseName || undefined,
+    batchName: batchName || undefined,
+  };
 }
 
 export function parseUsersFile(

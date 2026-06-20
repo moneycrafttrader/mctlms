@@ -21,6 +21,7 @@ import {
 import { UserRole, PaginatedResponse, User as UserType } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { AuthService } from '../auth/auth.service';
+import { EmailService } from '../email/email.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -32,6 +33,7 @@ export class UsersService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly authService: AuthService,
+    private readonly emailService: EmailService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────
@@ -174,6 +176,16 @@ export class UsersService {
       await this.supabaseService.client.auth.admin.deleteUser(userId);
       this.logger.error(`Failed to create user profile: ${profileError.message}`);
       throw new BadRequestException('Failed to create user profile');
+    }
+
+    // Fire-and-forget welcome email — failure must NOT block user creation
+    try {
+      await this.emailService.sendWelcomeEmail(dto.email, dto.name);
+    } catch (emailErr: any) {
+      this.logger.error(
+        `Welcome email failed for ${dto.email}: ${emailErr.message}`,
+        emailErr.stack,
+      );
     }
 
     return profile as unknown as UserType;

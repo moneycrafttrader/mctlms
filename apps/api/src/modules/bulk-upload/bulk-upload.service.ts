@@ -123,10 +123,50 @@ export class BulkUploadService {
             continue;
           }
 
-          // 4c. Enroll in batch if requested
-          if (dto.batchId) {
+          // 4c. Resolve course → batch from CSV columns
+          let targetBatchId: string | null = null;
+
+          if (user.courseName && user.batchName) {
+            // Look up course by name (case-insensitive)
+            const { data: matchedCourse } = await this.supabaseService.client
+              .from(TABLES.COURSES)
+              .select('id')
+              .ilike('name', user.courseName)
+              .maybeSingle();
+
+            if (!matchedCourse) {
+              failures.push({
+                email: user.email,
+                error: `Course "${user.courseName}" not found`,
+              });
+              continue;
+            }
+
+            // Look up batch by name + course_id (case-insensitive)
+            const { data: matchedBatch } = await this.supabaseService.client
+              .from(TABLES.BATCHES)
+              .select('id')
+              .eq('course_id', matchedCourse.id)
+              .ilike('name', user.batchName)
+              .maybeSingle();
+
+            if (!matchedBatch) {
+              failures.push({
+                email: user.email,
+                error: `Batch "${user.batchName}" not found in course "${user.courseName}"`,
+              });
+              continue;
+            }
+
+            targetBatchId = matchedBatch.id;
+          } else if (dto.batchId) {
+            targetBatchId = dto.batchId;
+          }
+
+          // 4d. Enroll in batch if a batch was resolved
+          if (targetBatchId) {
             try {
-              await this.batchesService.assignStudentToBatch(dto.batchId, userId);
+              await this.batchesService.assignStudentToBatch(targetBatchId, userId);
             } catch (batchErr: any) {
               failures.push({
                 email: user.email,
@@ -136,15 +176,8 @@ export class BulkUploadService {
             }
           }
 
-          // 4d. Send credentials email
-          const emailSubject = 'Your LMS Account Has Been Created';
-          const emailHtml = `<p>Hello ${user.name},</p>
-<p>An account has been created for you on the LMS platform.</p>
-<p><strong>Email:</strong> ${user.email}</p>
-<p><strong>Password:</strong> ${password}</p>
-<p>Please log in and change your password.</p>`;
-
-          await this.emailService.sendEmail(user.email, emailSubject, emailHtml);
+          // 4e. Send welcome email
+          await this.emailService.sendWelcomeEmail(user.email, user.name);
 
           successCount++;
         } catch (rowErr: any) {
