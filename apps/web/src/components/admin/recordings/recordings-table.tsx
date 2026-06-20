@@ -9,6 +9,7 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
+  Hourglass,
 } from 'lucide-react';
 import {
   type AdminVideo,
@@ -89,6 +90,9 @@ export function RecordingsTable({
     }
   };
 
+  const isProcessing = (video: AdminVideo) =>
+    video.status === 'processing' || video.status === 'uploading';
+
   const handleSaved = (updated: AdminVideo) => {
     setVideos((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
   };
@@ -138,18 +142,29 @@ export function RecordingsTable({
                 className: 'bg-gray-100 text-gray-600',
               };
 
+              const pending = isProcessing(video);
+
               return (
-                <tr key={video.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={video.id} className={`hover:bg-gray-50 transition-colors ${pending ? 'opacity-70' : ''}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50">
-                        <Film className="h-5 w-5 text-brand-600" />
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${pending ? 'bg-yellow-50' : 'bg-brand-50'}`}>
+                        {pending ? (
+                          <Hourglass className="h-5 w-5 text-yellow-500" />
+                        ) : (
+                          <Film className="h-5 w-5 text-brand-600" />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-gray-900 max-w-xs">
                           {video.title}
                         </p>
-                        {video.description && (
+                        {pending && (
+                          <p className="text-xs text-yellow-600 font-medium mt-0.5">
+                            Encoder preparing video...
+                          </p>
+                        )}
+                        {!pending && video.description && (
                           <p className="truncate text-xs text-gray-500 max-w-xs">
                             {video.description}
                           </p>
@@ -159,8 +174,12 @@ export function RecordingsTable({
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
                     <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" />
-                      {formatDuration(video.duration_seconds)}
+                      {pending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-500" />
+                      ) : (
+                        <Clock className="h-3.5 w-3.5" />
+                      )}
+                      {pending ? 'Processing...' : formatDuration(video.duration_seconds)}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
@@ -187,8 +206,9 @@ export function RecordingsTable({
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => setEditingVideo(video)}
-                        className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                        title="Edit"
+                        disabled={pending}
+                        className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={pending ? 'Cannot edit while processing' : 'Edit'}
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
