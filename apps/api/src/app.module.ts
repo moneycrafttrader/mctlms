@@ -77,6 +77,7 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
           host: config.get<string>('REDIS_HOST') ?? '127.0.0.1',
           port: config.get<number>('REDIS_PORT') ?? 6379,
           password: config.get<string>('REDIS_PASSWORD'),
+          tls: config.get<string>('REDIS_PASSWORD') ? {} : undefined,
         },
       }),
     }),
