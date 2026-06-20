@@ -43,6 +43,7 @@ export async function fetchApi<T = any>(
     ...fetchOptions,
     headers,
     credentials: 'include',
+    cache: 'no-store',
   });
 
   if (!response.ok) {

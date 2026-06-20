@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Film,
   Pencil,
@@ -56,6 +56,11 @@ export function RecordingsTable({
   const [videos, setVideos] = useState<AdminVideo[]>(initialVideos);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingVideo, setEditingVideo] = useState<AdminVideo | null>(null);
+
+  // Sync local state when parent refreshes (e.g. after a new upload)
+  useEffect(() => {
+    setVideos(initialVideos);
+  }, [initialVideos]);
 
   const refreshVideos = useCallback(async () => {
     try {
