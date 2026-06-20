@@ -1,6 +1,7 @@
 {
   "name": "lms-platform",
   "version": "0.1.0",
+  "packageManager": "pnpm@11.8.0",
   "private": true,
   "scripts": {
     "dev": "pnpm --parallel -r run dev",
