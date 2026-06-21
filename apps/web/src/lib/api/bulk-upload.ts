@@ -10,6 +10,15 @@ export interface RowResult {
   batchAssigned?: boolean;
 }
 
+export interface JobStatus {
+  status: 'processing' | 'completed' | 'failed';
+  totalRows: number;
+  successCount: number;
+  failureCount: number;
+  results: RowResult[];
+  failures: { email: string; error: string }[];
+}
+
 export interface BulkUploadJob {
   id: string;
   job_type: string;
@@ -33,27 +42,28 @@ export async function getBulkUploadJobs(token?: string) {
 }
 
 /**
+ * Poll a single job's status after upload has been started.
+ */
+export async function getJobStatus(jobId: string, token?: string) {
+  return fetchApi<JobStatus>(`${API_ROUTES.BULK_UPLOAD}/jobs/${jobId}`, { token });
+}
+
+/**
  * Upload a CSV/Excel file to bulk-create student accounts.
  * Sends multipart/form-data so no Content-Type header is set manually.
+ * Returns immediately with a jobId — poll getJobStatus() for results.
  */
 export async function uploadStudentsCsv(
   formData: FormData,
   token?: string,
-  signal?: AbortSignal,
 ) {
   return fetchApi<{
     jobId: string;
     fileName: string;
     totalRows: number;
-    successCount: number;
-    failureCount: number;
-    warningCount: number;
-    results: RowResult[];
-    failures: { email: string; error: string }[];
   }  >(`${API_ROUTES.BULK_UPLOAD}/students`, {
     method: 'POST',
     body: formData,
     token,
-    signal,
   });
 }

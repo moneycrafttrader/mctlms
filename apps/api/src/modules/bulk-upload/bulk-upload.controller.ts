@@ -2,10 +2,12 @@ import {
   Controller,
   Get,
   Post,
+  Param,
   Res,
   UseInterceptors,
   UploadedFile,
   Body,
+  NotFoundException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -34,6 +36,16 @@ export class BulkUploadController {
   @Roles(UserRole.ADMIN)
   async getJobs() {
     return this.bulkUploadService.getJobs();
+  }
+
+  @Get('jobs/:jobId')
+  @Roles(UserRole.ADMIN)
+  async getJobStatus(@Param('jobId') jobId: string) {
+    const status = await this.bulkUploadService.getJobStatus(jobId);
+    if (!status) {
+      throw new NotFoundException('Job not found');
+    }
+    return status;
   }
 
   @Post('students')

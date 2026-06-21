@@ -4,8 +4,10 @@ import { SupabaseService } from '../../common/services/supabase.service';
 import { EmailService } from '../email/email.service';
 import { BatchesService } from '../batches/batches.service';
 import { TABLES } from '../../common/constants/tables.constant';
-import { parseUsersFile } from '../../common/utils/file-parser.util';
+import { parseUsersFile, ParsedUser } from '../../common/utils/file-parser.util';
 import { UploadStudentsDto } from './dto/upload-students.dto';
+
+const CHUNK_SIZE = 5;
 
 export interface RowResult {
   rowNumber: number;
@@ -26,6 +28,10 @@ export class BulkUploadService {
     private readonly batchesService: BatchesService,
   ) {}
 
+  /**
+   * Synchronously parse + create job, then process rows in background.
+   * Returns immediately — frontend polls GET /jobs/:jobId for results.
+   */
   async processStudentUpload(
     adminId: string,
     file: Express.Multer.File,
@@ -34,20 +40,19 @@ export class BulkUploadService {
     jobId: string;
     fileName: string;
     totalRows: number;
-    successCount: number;
-    failureCount: number;
-    warningCount: number;
-    results: RowResult[];
-    failures: { email: string; error: string }[];
   }> {
-    // 1. Create the job record
+    // 1. Parse the file (synchronous, fast)
+    const parsedUsers = parseUsersFile(file.buffer, file.mimetype);
+    const totalRows = parsedUsers.length;
+
+    // 2. Create the job record
     const { data: job, error: jobError } = await this.supabaseService.client
       .from(TABLES.BULK_UPLOAD_JOBS)
       .insert({
         job_type: BulkUploadJobType.STUDENTS,
         uploaded_by: adminId,
         file_name: file.originalname,
-        total_rows: 0,
+        total_rows: totalRows,
         success_count: 0,
         failure_count: 0,
         status: 'processing',
@@ -63,170 +68,35 @@ export class BulkUploadService {
 
     const jobId = (job as any).id;
 
-    try {
-      // 2. Parse the file
-      const parsedUsers = parseUsersFile(file.buffer, file.mimetype);
+    // 3. Fire-and-forget background processing
+    this.processJobInBackground(jobId, parsedUsers, dto, adminId);
 
-      const totalRows = parsedUsers.length;
+    return { jobId, fileName: file.originalname, totalRows };
+  }
+
+  private async processJobInBackground(
+    jobId: string,
+    parsedUsers: ParsedUser[],
+    dto: UploadStudentsDto,
+    adminId: string,
+  ): Promise<void> {
+    try {
       const results: RowResult[] = [];
 
-      // 3. Update total_rows
-      await this.supabaseService.client
-        .from(TABLES.BULK_UPLOAD_JOBS)
-        .update({ total_rows: totalRows })
-        .eq('id', jobId);
-
-      // 4. Process each row
-      for (const user of parsedUsers) {
-        try {
-          const password = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
-
-          // 4a. Validate email format before calling Supabase
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(user.email)) {
-            results.push({
-              rowNumber: user.rowNumber,
-              email: user.email,
-              status: 'failure',
-              error: 'Invalid email format',
-            });
-            continue;
-          }
-
-          // 4b. Create auth user
-          const { data: authData, error: authError } =
-            await this.supabaseService.client.auth.admin.createUser({
-              email: user.email,
-              password,
-              email_confirm: true,
-            });
-
-          let userId: string;
-
-          if (authError) {
-            const msg = authError.message.toLowerCase();
-            if (msg.includes('already') || msg.includes('exists') || msg.includes('registered')) {
-              const { data: listData } =
-                await this.supabaseService.client.auth.admin.listUsers();
-              const existing = listData?.users.find((u: any) => u.email === user.email);
-              if (!existing) {
-                results.push({
-                  rowNumber: user.rowNumber,
-                  email: user.email,
-                  status: 'failure',
-                  error: 'User exists in auth but could not be retrieved',
-                });
-                continue;
-              }
-              userId = existing.id;
-            } else {
-              results.push({
-                rowNumber: user.rowNumber,
-                email: user.email,
-                status: 'failure',
-                error: authError.message,
-              });
-              continue;
-            }
-          } else {
-            userId = authData.user.id;
-          }
-
-          // 4c. Upsert profile
-          const { error: profileError } = await this.supabaseService.client
-            .from(TABLES.PROFILES)
-            .upsert(
-              {
-                id: userId,
-                name: user.name,
-                email: user.email,
-                phone: user.phone ?? null,
-                role: UserRole.STUDENT,
-                is_active: true,
-              },
-              { onConflict: 'id' },
-            );
-
-          if (profileError) {
-            results.push({
-              rowNumber: user.rowNumber,
-              email: user.email,
-              status: 'failure',
-              error: `Profile insert failed: ${profileError.message}`,
-            });
-            continue;
-          }
-
-          // 4d. Batch enrollment — warn on not found, never fail
-          let batchAssigned = false;
-          let warning: string | undefined;
-
-          if (user.batchName) {
-            const lookup = await this.lookupBatchByName(
-              user.batchName,
-              user.courseName,
-            );
-
-            if (!lookup) {
-              warning = `Student created but batch "${user.batchName}" not found${user.courseName ? ` in course "${user.courseName}"` : ''} — assign manually`;
-            } else if (lookup.multipleMatch) {
-              try {
-                await this.batchesService.assignStudentToBatch(lookup.batchId, userId);
-                batchAssigned = true;
-              } catch {
-                // batch enrollment failure is non-fatal
-              }
-              warning = `Multiple batches matched — enrolled in first match`;
-            } else {
-              try {
-                await this.batchesService.assignStudentToBatch(lookup.batchId, userId);
-                batchAssigned = true;
-              } catch {
-                // batch enrollment failure is non-fatal
-              }
-            }
-          } else if (dto.batchId) {
-            // Fallback to UI-selected batch
-            try {
-              await this.batchesService.assignStudentToBatch(dto.batchId, userId);
-              batchAssigned = true;
-            } catch {
-              // batch enrollment failure is non-fatal
-            }
-          }
-
-          // 4e. Send welcome email — fire-and-forget, never fails the row
-          try {
-            await this.emailService.sendWelcomeEmail(user.email, user.name);
-          } catch (emailErr: any) {
-            this.logger.error(`Welcome email failed for ${user.email}: ${emailErr.message}`);
-          }
-
-          results.push({
-            rowNumber: user.rowNumber,
-            email: user.email,
-            status: 'success',
-            warning,
-            batchAssigned,
-          });
-        } catch (rowErr: any) {
-          results.push({
-            rowNumber: user.rowNumber,
-            email: user.email,
-            status: 'failure',
-            error: rowErr.message ?? 'Unknown error',
-          });
-        }
+      // Process rows in parallel chunks of CHUNK_SIZE
+      for (let i = 0; i < parsedUsers.length; i += CHUNK_SIZE) {
+        const chunk = parsedUsers.slice(i, i + CHUNK_SIZE);
+        const chunkResults = await Promise.all(
+          chunk.map((user) => this.processSingleRow(user, dto)),
+        );
+        results.push(...chunkResults);
       }
 
       const successCount = results.filter((r) => r.status === 'success').length;
       const failureCount = results.filter((r) => r.status === 'failure').length;
       const warningCount = results.filter((r) => r.warning).length;
-      const failures = results
-        .filter((r) => r.status === 'failure')
-        .map((r) => ({ email: r.email, error: r.error! }));
 
-      // 5. Update job as completed
+      // Save results to DB
       await this.supabaseService.client
         .from(TABLES.BULK_UPLOAD_JOBS)
         .update({
@@ -241,26 +111,158 @@ export class BulkUploadService {
         })
         .eq('id', jobId);
 
-      return {
-        jobId,
-        fileName: file.originalname,
-        totalRows,
-        successCount,
-        failureCount,
-        warningCount,
-        results,
-        failures,
-      };
+      this.logger.log(
+        `Job ${jobId} completed: ${successCount} success, ${warningCount} warnings, ${failureCount} failures`,
+      );
     } catch (err: any) {
-      // Mark job as failed on unexpected error
+      this.logger.error(`Job ${jobId} failed: ${err.message}`, err.stack);
       await this.supabaseService.client
         .from(TABLES.BULK_UPLOAD_JOBS)
-        .update({ status: 'failed', completed_at: new Date().toISOString() })
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+        })
         .eq('id', jobId);
+    }
+  }
 
-      throw err;
-    } finally {
-      this.logger.log(`Bulk upload job ${jobId} finished`);
+  private async processSingleRow(
+    user: ParsedUser,
+    dto: UploadStudentsDto,
+  ): Promise<RowResult> {
+    try {
+      const password = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+
+      // Validate email format before calling Supabase
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(user.email)) {
+        return {
+          rowNumber: user.rowNumber,
+          email: user.email,
+          status: 'failure',
+          error: 'Invalid email format',
+        };
+      }
+
+      // Create auth user
+      const { data: authData, error: authError } =
+        await this.supabaseService.client.auth.admin.createUser({
+          email: user.email,
+          password,
+          email_confirm: true,
+        });
+
+      let userId: string;
+
+      if (authError) {
+        const msg = authError.message.toLowerCase();
+        if (msg.includes('already') || msg.includes('exists') || msg.includes('registered')) {
+          const { data: listData } =
+            await this.supabaseService.client.auth.admin.listUsers();
+          const existing = listData?.users.find((u: any) => u.email === user.email);
+          if (!existing) {
+            return {
+              rowNumber: user.rowNumber,
+              email: user.email,
+              status: 'failure',
+              error: 'User exists in auth but could not be retrieved',
+            };
+          }
+          userId = existing.id;
+        } else {
+          return {
+            rowNumber: user.rowNumber,
+            email: user.email,
+            status: 'failure',
+            error: authError.message,
+          };
+        }
+      } else {
+        userId = authData.user.id;
+      }
+
+      // Upsert profile
+      const { error: profileError } = await this.supabaseService.client
+        .from(TABLES.PROFILES)
+        .upsert(
+          {
+            id: userId,
+            name: user.name,
+            email: user.email,
+            phone: user.phone ?? null,
+            role: UserRole.STUDENT,
+            is_active: true,
+          },
+          { onConflict: 'id' },
+        );
+
+      if (profileError) {
+        return {
+          rowNumber: user.rowNumber,
+          email: user.email,
+          status: 'failure',
+          error: `Profile insert failed: ${profileError.message}`,
+        };
+      }
+
+      // Batch enrollment — warn on not found, never fail
+      let batchAssigned = false;
+      let warning: string | undefined;
+
+      if (user.batchName) {
+        const lookup = await this.lookupBatchByName(
+          user.batchName,
+          user.courseName,
+        );
+
+        if (!lookup) {
+          warning = `Student created but batch "${user.batchName}" not found${user.courseName ? ` in course "${user.courseName}"` : ''} — assign manually`;
+        } else if (lookup.multipleMatch) {
+          try {
+            await this.batchesService.assignStudentToBatch(lookup.batchId, userId);
+            batchAssigned = true;
+          } catch {
+            // batch enrollment failure is non-fatal
+          }
+          warning = `Multiple batches matched — enrolled in first match`;
+        } else {
+          try {
+            await this.batchesService.assignStudentToBatch(lookup.batchId, userId);
+            batchAssigned = true;
+          } catch {
+            // batch enrollment failure is non-fatal
+          }
+        }
+      } else if (dto.batchId) {
+        try {
+          await this.batchesService.assignStudentToBatch(dto.batchId, userId);
+          batchAssigned = true;
+        } catch {
+          // batch enrollment failure is non-fatal
+        }
+      }
+
+      // Send welcome email — truly fire-and-forget, not awaited
+      this.emailService
+        .sendWelcomeEmail(user.email, user.name)
+        .catch((emailErr: any) =>
+          this.logger.warn(`Welcome email failed for ${user.email}: ${emailErr.message}`),
+        );
+
+      return {
+        rowNumber: user.rowNumber,
+        email: user.email,
+        status: 'success',
+        warning,
+        batchAssigned,
+      };
+    } catch (rowErr: any) {
+      return {
+        rowNumber: user.rowNumber,
+        email: user.email,
+        status: 'failure',
+        error: rowErr.message ?? 'Unknown error',
+      };
     }
   }
 
@@ -270,11 +272,19 @@ export class BulkUploadService {
   ): Promise<{ batchId: string; multipleMatch?: boolean } | null> {
     let query = this.supabaseService.client
       .from(TABLES.BATCHES)
-      .select('id, courses!inner(name)')
-      .ilike('batches.name', batchName.trim());
+      .select('id')
+      .ilike('name', batchName.trim());
 
-    if (courseName) {
-      query = query.ilike('courses.name', courseName.trim());
+    if (courseName?.trim()) {
+      const { data: course } = await this.supabaseService.client
+        .from(TABLES.COURSES)
+        .select('id')
+        .ilike('name', courseName.trim())
+        .maybeSingle();
+
+      if (course) {
+        query = query.eq('course_id', course.id);
+      }
     }
 
     const { data, error } = await query.limit(2);
@@ -286,6 +296,46 @@ export class BulkUploadService {
     return {
       batchId: data[0].id,
       multipleMatch: data.length > 1,
+    };
+  }
+
+  /**
+   * Return a single job's status for the polling endpoint.
+   */
+  async getJobStatus(jobId: string): Promise<{
+    status: string;
+    totalRows: number;
+    successCount: number;
+    failureCount: number;
+    results: RowResult[];
+    failures: { email: string; error: string }[];
+  } | null> {
+    const { data, error } = await this.supabaseService.client
+      .from(TABLES.BULK_UPLOAD_JOBS)
+      .select('*')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const stored = (data as any).failures ?? [];
+    const isNewFormat = stored.length > 0 && 'rowNumber' in stored[0];
+    const results: RowResult[] = isNewFormat ? stored : [];
+    const failures = isNewFormat
+      ? stored
+          .filter((r: any) => r.status === 'failure')
+          .map((r: any) => ({ email: r.email, error: r.error }))
+      : stored;
+
+    return {
+      status: (data as any).status,
+      totalRows: (data as any).total_rows,
+      successCount: (data as any).success_count,
+      failureCount: (data as any).failure_count,
+      results,
+      failures,
     };
   }
 

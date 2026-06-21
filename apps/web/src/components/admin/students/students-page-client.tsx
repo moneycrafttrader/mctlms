@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Users,
   Plus,
@@ -35,6 +36,7 @@ export function StudentsPageClient({
   initialTotal,
   token,
 }: StudentsPageClientProps) {
+  const router = useRouter();
   const [students, setStudents] = useState<User[]>(initialStudents);
   const [total, setTotal] = useState(initialTotal);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -67,7 +69,8 @@ export function StudentsPageClient({
     } catch {
       // silent
     }
-  }, [token]);
+    router.refresh();
+  }, [token, router]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;

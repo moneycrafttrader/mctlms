@@ -2,10 +2,12 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, AlertTriangle, Download, AlertCircle } from 'lucide-react';
-import { uploadStudentsCsv, type RowResult } from '@/lib/api/bulk-upload';
+import { uploadStudentsCsv, getJobStatus, type RowResult } from '@/lib/api/bulk-upload';
 import { API_ROUTES } from '@/lib/constants';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const POLL_INTERVAL = 2000;
+const MAX_POLL_MS = 30000;
 
 interface FileDropzoneProps {
   onUploadSuccess: () => void;
@@ -44,30 +46,44 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
         return;
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-
       try {
         const formData = new FormData();
         formData.append('file', file);
 
-        const result = await uploadStudentsCsv(formData, token, controller.signal);
-        clearTimeout(timeoutId);
-        setSummary({
-          totalRows: result.totalRows,
-          successCount: result.successCount,
-          failureCount: result.failureCount,
-          warningCount: result.warningCount,
-          results: result.results || [],
-          failures: result.failures || [],
-        });
-      } catch (err: any) {
-        clearTimeout(timeoutId);
-        if (err.name === 'AbortError') {
-          setError('Upload timed out. Please refresh to check results.');
-        } else {
-          setError(err.message || 'Upload failed');
+        const { jobId, totalRows } = await uploadStudentsCsv(formData, token);
+
+        // Poll for job results
+        const pollStart = Date.now();
+        let jobResult = await getJobStatus(jobId, token);
+
+        while (
+          jobResult &&
+          jobResult.status === 'processing' &&
+          Date.now() - pollStart < MAX_POLL_MS
+        ) {
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+          jobResult = await getJobStatus(jobId, token);
         }
+
+        if (!jobResult) {
+          setError('Upload job not found. Please refresh to check results.');
+        } else if (jobResult.status === 'failed') {
+          setError('Upload processing failed. Please try again.');
+        } else if (jobResult.status === 'processing') {
+          setError('Upload is taking longer than expected. Please refresh to check results.');
+        } else {
+          const warningCount = jobResult.results.filter((r: RowResult) => r.warning).length;
+          setSummary({
+            totalRows: jobResult.totalRows,
+            successCount: jobResult.successCount,
+            failureCount: jobResult.failureCount,
+            warningCount,
+            results: jobResult.results || [],
+            failures: jobResult.failures || [],
+          });
+        }
+      } catch (err: any) {
+        setError(err.message || 'Upload failed');
       } finally {
         setIsUploading(false);
         onUploadSuccess();
