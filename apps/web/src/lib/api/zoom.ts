@@ -11,11 +11,9 @@ export interface ZoomSignatureResponse {
 export async function getZoomSignature(
   meetingNumber: string,
   role: number,
-  token?: string,
 ) {
   return fetchApi<ZoomSignatureResponse>(API_ROUTES.ZOOM_SIGNATURE, {
     method: 'POST',
     body: JSON.stringify({ meetingNumber, role }),
-    token,
   });
 }

@@ -13,7 +13,6 @@ interface BatchStudentsModalProps {
   batchId: string;
   batchName: string;
   onClose: () => void;
-  token?: string;
 }
 
 export function BatchStudentsModal({
@@ -21,7 +20,6 @@ export function BatchStudentsModal({
   batchId,
   batchName,
   onClose,
-  token,
 }: BatchStudentsModalProps) {
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [total, setTotal] = useState(0);
@@ -39,7 +37,7 @@ export function BatchStudentsModal({
   const fetchStudents = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getBatchStudents(batchId, token);
+      const result = await getBatchStudents(batchId);
       setStudents(result.items);
       setTotal(result.total);
     } catch {
@@ -47,7 +45,7 @@ export function BatchStudentsModal({
     } finally {
       setLoading(false);
     }
-  }, [batchId, token]);
+  }, [batchId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -66,7 +64,7 @@ export function BatchStudentsModal({
     setError('');
     setSubmitting(true);
     try {
-      await addStudentToBatch(batchId, { firstName, lastName, email, phone: phone || undefined }, token);
+      await addStudentToBatch(batchId, { firstName, lastName, email, phone: phone || undefined });
       setShowAddForm(false);
       setFirstName('');
       setLastName('');

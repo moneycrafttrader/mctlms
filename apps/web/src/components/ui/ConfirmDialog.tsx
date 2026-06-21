@@ -1,80 +1,66 @@
 'use client';
-
-import { useEffect } from 'react';
-import { X, AlertTriangle } from 'lucide-react';
+import { Modal } from './Modal';
+import { Button } from './Button';
+import { AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
+  onClose?: () => void;
+  onCancel?: () => void;
+  onConfirm: () => void;
   title: string;
   message: string;
   confirmLabel?: string;
-  onConfirm: () => void;
-  onCancel: () => void;
+  cancelLabel?: string;
+  variant?: 'danger' | 'warning';
+  loading?: boolean;
 }
 
 export function ConfirmDialog({
   isOpen,
+  onClose,
+  onCancel,
+  onConfirm,
   title,
   message,
   confirmLabel = 'Confirm',
-  onConfirm,
-  onCancel,
+  cancelLabel = 'Cancel',
+  variant = 'danger',
+  loading = false,
 }: ConfirmDialogProps) {
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-    };
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, onCancel]);
-
-  if (!isOpen) return null;
-
+  const handleClose = onClose ?? onCancel ?? (() => {});
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-sm rounded-xl bg-white shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button
-            onClick={onCancel}
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <Modal isOpen={isOpen} onClose={handleClose} size="sm">
+      <div className="flex flex-col items-center text-center py-2">
+        <div
+          className={cn(
+            'mb-4 flex h-12 w-12 items-center justify-center rounded-full',
+            variant === 'danger' ? 'bg-red-50' : 'bg-amber-50',
+          )}
+        >
+          <AlertTriangle
+            className={cn(
+              'h-6 w-6',
+              variant === 'danger' ? 'text-red-500' : 'text-amber-500',
+            )}
+          />
         </div>
-        <div className="space-y-4 px-6 py-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500" />
-            <p className="text-sm text-gray-600">{message}</p>
-          </div>
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={onCancel}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-            >
-              {confirmLabel}
-            </button>
-          </div>
-        </div>
+        <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
+        <p className="mt-2 text-sm text-text-secondary">{message}</p>
       </div>
-    </div>
+      <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-surface-border">
+        <Button variant="secondary" onClick={handleClose} disabled={loading}>
+          {cancelLabel}
+        </Button>
+        <Button
+          variant={variant === 'danger' ? 'danger' : 'primary'}
+          onClick={onConfirm}
+          loading={loading}
+        >
+          {confirmLabel}
+        </Button>
+      </div>
+    </Modal>
   );
 }

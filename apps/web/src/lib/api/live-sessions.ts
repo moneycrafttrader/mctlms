@@ -25,14 +25,51 @@ export interface StudentSessions {
   past: (LiveSession & { attendanceStatus?: string })[];
 }
 
-export async function getMySessions(token?: string) {
-  return fetchApi<StudentSessions>(`${API_ROUTES.LIVE_SESSIONS}/my`, { token });
+export interface JoinTokenResponse {
+  token: string;
+  expiresInSeconds: number;
 }
 
-export async function getSessionById(id: string, token?: string) {
-  return fetchApi<LiveSessionWithDetails>(`${API_ROUTES.LIVE_SESSIONS}/${id}`, { token });
+export interface JoinUrlResponse {
+  joinUrl: string;
+  sessionId: string;
 }
 
-export async function getSessionJoinUrl(id: string, token?: string) {
-  return fetchApi<string>(`${API_ROUTES.LIVE_SESSIONS}/${id}/join`, { token });
+export async function getMySessions() {
+  return fetchApi<StudentSessions>(`${API_ROUTES.LIVE_SESSIONS}/my`);
+}
+
+export async function getSessionById(id: string) {
+  return fetchApi<LiveSessionWithDetails>(`${API_ROUTES.LIVE_SESSIONS}/${id}`);
+}
+
+/**
+ * Request a single-use join token for a live session.
+ * Call this first, then pass the token to getSessionJoinUrl().
+ */
+export async function requestJoinToken(sessionId: string) {
+  return fetchApi<JoinTokenResponse>(
+    `${API_ROUTES.LIVE_SESSIONS}/${sessionId}/request-join`,
+    { method: 'POST' },
+  );
+}
+
+/**
+ * Consume a single-use join token and get the Zoom join URL.
+ * The token is valid for one use only and expires after 15 minutes.
+ */
+export async function getSessionJoinUrl(sessionId: string, token: string) {
+  return fetchApi<JoinUrlResponse>(
+    `${API_ROUTES.LIVE_SESSIONS}/${sessionId}/join?token=${encodeURIComponent(token)}`,
+  );
+}
+
+/**
+ * Mark the user as having left a live session.
+ */
+export async function leaveSession(sessionId: string) {
+  return fetchApi<{ left: boolean }>(
+    `${API_ROUTES.LIVE_SESSIONS}/${sessionId}/leave`,
+    { method: 'POST' },
+  );
 }

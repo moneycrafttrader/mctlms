@@ -23,7 +23,6 @@ interface RecordingsTableProps {
   initialVideos: AdminVideo[];
   total: number;
   topics: Topic[];
-  token?: string;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -52,7 +51,6 @@ export function RecordingsTable({
   initialVideos,
   total,
   topics,
-  token,
 }: RecordingsTableProps) {
   const [videos, setVideos] = useState<AdminVideo[]>(initialVideos);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -65,12 +63,12 @@ export function RecordingsTable({
 
   const refreshVideos = useCallback(async () => {
     try {
-      const result = await getAdminVideos({ page: 1, limit: 50 }, token);
+      const result = await getAdminVideos({ page: 1, limit: 50 });
       setVideos(result.items);
     } catch {
       // stay with last-known state
     }
-  }, [token]);
+  }, []);
 
   const handleDelete = async (video: AdminVideo) => {
     const confirmed = window.confirm(
@@ -81,7 +79,7 @@ export function RecordingsTable({
 
     setDeletingId(video.id);
     try {
-      await deleteVideo(video.id, token);
+      await deleteVideo(video.id);
       setVideos((prev) => prev.filter((v) => v.id !== video.id));
     } catch {
       alert('Failed to delete video. Please try again.');
@@ -244,7 +242,6 @@ export function RecordingsTable({
           isOpen={true}
           onClose={() => setEditingVideo(null)}
           onSaved={handleSaved}
-          token={token}
         />
       )}
     </>

@@ -37,25 +37,24 @@ export interface CourseStats {
 /**
  * Fetch all courses with pagination.
  */
-export async function getCourses(token?: string) {
+export async function getCourses() {
   return fetchApi<{ items: Course[]; total: number; page: number; limit: number }>(
     API_ROUTES.COURSES,
-    { token },
   );
 }
 
 /**
  * Fetch a single course by ID, including its nested batches.
  */
-export async function getCourse(id: string, token?: string) {
-  return fetchApi<CourseWithBatches>(`${API_ROUTES.COURSES}/${id}`, { token });
+export async function getCourse(id: string) {
+  return fetchApi<CourseWithBatches>(`${API_ROUTES.COURSES}/${id}`);
 }
 
 /**
  * Fetch stats for a single course.
  */
-export async function getCourseStats(courseId: string, token?: string) {
-  return fetchApi<CourseStats>(`${API_ROUTES.COURSES}/${courseId}/stats`, { token });
+export async function getCourseStats(courseId: string) {
+  return fetchApi<CourseStats>(`${API_ROUTES.COURSES}/${courseId}/stats`);
 }
 
 export interface StudentCourse extends Course {
@@ -67,23 +66,23 @@ export interface StudentCourse extends Course {
  * Fetch courses for the currently logged-in student.
  * GET /courses/my
  */
-export async function getMyCourses(token?: string) {
-  return fetchApi<StudentCourse[]>(`${API_ROUTES.COURSES}/my`, { token });
+export async function getMyCourses() {
+  return fetchApi<StudentCourse[]>(`${API_ROUTES.COURSES}/my`);
 }
 
 /**
  * Fetch a single course by ID with enrolled batches (student classroom).
  * GET /courses/:id
  */
-export async function getStudentCourse(id: string, token?: string) {
-  return fetchApi<StudentCourse>(`${API_ROUTES.COURSES}/${id}`, { token });
+export async function getStudentCourse(id: string) {
+  return fetchApi<StudentCourse>(`${API_ROUTES.COURSES}/${id}`);
 }
 
 /**
  * Fetch all batches belonging to a specific course.
  */
-export async function getCourseBatches(courseId: string, token?: string) {
-  return fetchApi<Batch[]>(`${API_ROUTES.COURSES}/${courseId}/batches`, { token });
+export async function getCourseBatches(courseId: string) {
+  return fetchApi<Batch[]>(`${API_ROUTES.COURSES}/${courseId}/batches`);
 }
 
 /**
@@ -91,12 +90,10 @@ export async function getCourseBatches(courseId: string, token?: string) {
  */
 export async function createCourse(
   data: { name: string; description?: string },
-  token?: string,
 ) {
   return fetchApi<Course>(API_ROUTES.COURSES, {
     method: 'POST',
     body: JSON.stringify(data),
-    token,
   });
 }
 
@@ -104,10 +101,9 @@ export async function createCourse(
  * Soft-delete a course (archive).
  * DELETE /courses/:id
  */
-export async function deleteCourse(id: string, token?: string) {
+export async function deleteCourse(id: string) {
   return fetchApi<Course>(`${API_ROUTES.COURSES}/${id}`, {
     method: 'DELETE',
-    token,
   });
 }
 
@@ -117,12 +113,10 @@ export async function deleteCourse(id: string, token?: string) {
 export async function createBatch(
   courseId: string,
   data: { name: string; scheduleType: string },
-  token?: string,
 ) {
   return fetchApi<Batch>(API_ROUTES.BATCHES, {
     method: 'POST',
     body: JSON.stringify({ courseId, ...data }),
-    token,
   });
 }
 
@@ -138,7 +132,6 @@ export interface StudentProfile {
  */
 export async function getAllBatches(
   params: { isActive?: boolean; page?: number; limit?: number } = {},
-  token?: string,
 ) {
   const qp = new URLSearchParams();
   if (params.isActive !== undefined) qp.set('isActive', String(params.isActive));
@@ -147,7 +140,6 @@ export async function getAllBatches(
   const qs = qp.toString();
   return fetchApi<{ items: Batch[]; total: number }>(
     `${API_ROUTES.BATCHES}${qs ? `?${qs}` : ''}`,
-    { token },
   );
 }
 
@@ -158,14 +150,12 @@ export async function getAllBatches(
 export async function assignStudentsToBatch(
   batchId: string,
   studentIds: string[],
-  token?: string,
 ) {
   return fetchApi<{ enrolledCount: number }>(
     `${API_ROUTES.BATCHES}/${batchId}/students`,
     {
       method: 'POST',
       body: JSON.stringify({ studentIds }),
-      token,
     },
   );
 }
@@ -184,12 +174,10 @@ export interface AddStudentResponse {
 export async function addStudentToBatch(
   batchId: string,
   data: { firstName: string; lastName: string; email: string; phone?: string },
-  token?: string,
 ) {
   return fetchApi<AddStudentResponse>(`${API_ROUTES.BATCHES}/${batchId}/add-student`, {
     method: 'POST',
     body: JSON.stringify(data),
-    token,
   });
 }
 
@@ -199,7 +187,6 @@ export async function addStudentToBatch(
  */
 export async function getBatchStudents(
   batchId: string,
-  token?: string,
   page?: number,
   limit?: number,
 ) {
@@ -209,7 +196,6 @@ export async function getBatchStudents(
   const qs = params.toString();
   return fetchApi<{ items: StudentProfile[]; total: number; page: number; limit: number }>(
     `${API_ROUTES.BATCHES}/${batchId}/students${qs ? `?${qs}` : ''}`,
-    { token },
   );
 }
 
@@ -220,14 +206,12 @@ export async function getBatchStudents(
 export async function removeStudentsFromBatch(
   batchId: string,
   studentIds: string[],
-  token?: string,
 ) {
   return fetchApi<{ removedCount: number }>(
     `${API_ROUTES.BATCHES}/${batchId}/students`,
     {
       method: 'DELETE',
       body: JSON.stringify({ studentIds }),
-      token,
     },
   );
 }
@@ -239,12 +223,10 @@ export async function removeStudentsFromBatch(
 export async function updateBatch(
   batchId: string,
   data: { name?: string; scheduleType?: string },
-  token?: string,
 ) {
   return fetchApi<Batch>(`${API_ROUTES.BATCHES}/${batchId}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
-    token,
   });
 }
 
@@ -254,11 +236,9 @@ export async function updateBatch(
  */
 export async function deleteBatch(
   batchId: string,
-  token?: string,
 ) {
   return fetchApi<{ deleted: boolean }>(`${API_ROUTES.BATCHES}/${batchId}`, {
     method: 'DELETE',
-    token,
   });
 }
 
@@ -269,11 +249,9 @@ export async function deleteBatch(
 export async function reassignBatch(
   batchId: string,
   targetCourseId: string,
-  token?: string,
 ) {
   return fetchApi<Batch>(`${API_ROUTES.BATCHES}/${batchId}/reassign-course`, {
     method: 'PATCH',
     body: JSON.stringify({ courseId: targetCourseId }),
-    token,
   });
 }

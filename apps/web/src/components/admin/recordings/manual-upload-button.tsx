@@ -6,10 +6,9 @@ import { ManualUploadModal } from './manual-upload-modal';
 
 interface ManualUploadButtonProps {
   onUploadComplete?: () => void;
-  token?: string;
 }
 
-export function ManualUploadButton({ onUploadComplete, token }: ManualUploadButtonProps) {
+export function ManualUploadButton({ onUploadComplete }: ManualUploadButtonProps) {
   const [showModal, setShowModal] = useState(false);
 
   return (
@@ -29,7 +28,6 @@ export function ManualUploadButton({ onUploadComplete, token }: ManualUploadButt
           setShowModal(false);
           onUploadComplete?.();
         }}
-        token={token}
       />
     </>
   );

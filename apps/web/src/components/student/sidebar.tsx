@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen, Video, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Video, FileText, BarChart3, LogOut } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
 
 const navItems = [
@@ -10,6 +10,8 @@ const navItems = [
   { label: 'My Courses', href: ROUTES.STUDENT.COURSES, icon: BookOpen },
   { label: 'Live Sessions', href: ROUTES.STUDENT.LIVE_SESSIONS, icon: Video },
   { label: 'Video Library', href: ROUTES.STUDENT.VIDEOS, icon: Video },
+  { label: 'Tests', href: ROUTES.STUDENT.TESTS, icon: FileText },
+  { label: 'Results', href: ROUTES.STUDENT.RESULTS, icon: BarChart3 },
 ];
 
 function isActive(href: string, pathname: string) {

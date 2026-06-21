@@ -261,3 +261,48 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
 }
+
+// ──────────────────────────────────────────────────────────────
+// Device Fingerprinting
+// ──────────────────────────────────────────────────────────────
+
+export interface DeviceFingerprint {
+  browser: string;
+  os: string;
+  screenResolution: string;
+  timezone: string;
+  language: string;
+}
+
+export interface UserDevice {
+  id: string;
+  userId: string;
+  fingerprintHash: string;
+  browser: string | null;
+  os: string | null;
+  screenResolution: string | null;
+  timezone: string | null;
+  language: string | null;
+  ipAddress: string | null;
+  lastIpAddress: string | null;
+  userAgent: string | null;
+  isTrusted: boolean;
+  name: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface LoginAlert {
+  id: string;
+  userId: string;
+  deviceId: string | null;
+  alertType: LoginAlertType;
+  ipAddress: string | null;
+  userAgent: string | null;
+  details: Record<string, unknown>;
+  isRead: boolean;
+  isSuspicious: boolean;
+  createdAt: string;
+}
+
+export type LoginAlertType = 'new_device' | 'new_ip' | 'unusual_time' | 'suspicious';

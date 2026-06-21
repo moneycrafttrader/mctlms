@@ -9,7 +9,6 @@ interface ReassignBatchFormProps {
   currentCourseId: string;
   courses: { id: string; name: string }[];
   onSuccess: () => void;
-  token?: string;
 }
 
 export function ReassignBatchForm({
@@ -18,7 +17,6 @@ export function ReassignBatchForm({
   currentCourseId,
   courses,
   onSuccess,
-  token,
 }: ReassignBatchFormProps) {
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [error, setError] = useState('');
@@ -36,7 +34,7 @@ export function ReassignBatchForm({
     setSubmitting(true);
 
     try {
-      await reassignBatch(batchId, selectedCourseId, token);
+      await reassignBatch(batchId, selectedCourseId);
       setSelectedCourseId('');
       onSuccess();
     } catch (err: any) {

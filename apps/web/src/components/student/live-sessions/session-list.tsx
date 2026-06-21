@@ -14,10 +14,11 @@ import {
   type LiveSession,
   getMySessions,
   getSessionJoinUrl,
+  requestJoinToken,
 } from '@/lib/api/live-sessions';
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface SessionListProps {
-  token?: string;
 }
 
 function formatDate(iso: string) {
@@ -51,8 +52,9 @@ function SessionCard({
   const handleJoin = async () => {
     setJoining(true);
     try {
-      const url = await getSessionJoinUrl(session.id, token);
-      window.open(url, '_blank');
+      const { token } = await requestJoinToken(session.id);
+      const { joinUrl } = await getSessionJoinUrl(session.id, token);
+      window.open(joinUrl, '_blank');
     } catch {
       setJoinUrl(null);
     } finally {
@@ -128,20 +130,20 @@ function SessionCard({
   );
 }
 
-export function SessionList({ token }: SessionListProps) {
+export function SessionList(_props: SessionListProps) {
   const [upcoming, setUpcoming] = useState<LiveSession[]>([]);
   const [past, setPast] = useState<(LiveSession & { attendanceStatus?: string })[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getMySessions(token)
+    getMySessions()
       .then((result) => {
         setUpcoming(result.upcoming);
         setPast(result.past);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) {
     return (
@@ -164,7 +166,7 @@ export function SessionList({ token }: SessionListProps) {
         ) : (
           <div className="space-y-3">
             {upcoming.map((session) => (
-              <SessionCard key={session.id} session={session} token={token} />
+              <SessionCard key={session.id} session={session} />
             ))}
           </div>
         )}
@@ -175,7 +177,7 @@ export function SessionList({ token }: SessionListProps) {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Past Sessions</h2>
           <div className="space-y-3">
             {past.map((session) => (
-              <SessionCard key={session.id} session={session} token={token} />
+              <SessionCard key={session.id} session={session} />
             ))}
           </div>
         </section>

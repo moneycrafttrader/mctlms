@@ -1,7 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
 import { getStudentCourse } from '@/lib/api/courses';
-import { getMySessions, type LiveSession } from '@/lib/api/live-sessions';
+import { getMySessions } from '@/lib/api/live-sessions';
 import { getBatchVideos } from '@/lib/api/videos';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { CourseDetailSessions } from './course-detail-sessions';
@@ -13,26 +11,9 @@ interface Props {
   params: { courseId: string };
 }
 
-function filterSessionsByBatch(
-  sessions: LiveSession[],
-  batchIds: string[],
-): LiveSession[] {
-  return sessions;
-}
-
 export default async function StudentCourseDetailPage({ params }: Props) {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
-
-  if (!token) {
-    redirect('/login');
-  }
-
   try {
-    const course = await getStudentCourse(params.courseId, token);
+    const course = await getStudentCourse(params.courseId);
     const enrolledBatches = (course as any).enrolledBatches ?? [];
 
     if (enrolledBatches.length === 0) {
@@ -40,11 +21,10 @@ export default async function StudentCourseDetailPage({ params }: Props) {
     }
 
     const batch = enrolledBatches[0];
-    const allBatchIds = enrolledBatches.map((b: any) => b.id);
 
     const [sessionsResult, videos] = await Promise.all([
-      getMySessions(token),
-      getBatchVideos(batch.id, token),
+      getMySessions(),
+      getBatchVideos(batch.id),
     ]);
 
     const allSessions = [
@@ -91,7 +71,6 @@ export default async function StudentCourseDetailPage({ params }: Props) {
           <CourseDetailSessions
             upcoming={upcomingSessions}
             past={pastSessions}
-            token={token}
           />
 
           <CourseDetailRecordings videos={videos} />

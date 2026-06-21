@@ -1,0 +1,689 @@
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { SupabaseService } from '../../common/services/supabase.service';
+import { TABLES } from '../../common/constants/tables.constant';
+import { AttemptStatus, ReviewStatus, QuestionType } from '@lms/shared-types';
+
+export interface AutoGradeSummary {
+  total: number;
+  autoGraded: number;
+  correct: number;
+  incorrect: number;
+  manualReview: number;
+  marksAwarded: number;
+  marksPossible: number;
+}
+
+interface ReviewQueueOptions {
+  status?: string;
+  assignedTo?: string;
+  testId?: string;
+  page?: number;
+  limit?: number;
+}
+
+@Injectable()
+export class EvaluationService {
+  private readonly logger = new Logger(EvaluationService.name);
+
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async autoGradeAttempt(attemptId: string): Promise<{ summary: AutoGradeSummary; attempt: any }> {
+    const { data: attempt, error: attemptError } = await this.supabaseService.client
+      .from(TABLES.TEST_ATTEMPTS)
+      .select('*')
+      .eq('id', attemptId)
+      .single();
+
+    if (attemptError || !attempt) throw new NotFoundException('Attempt not found');
+
+    const { data: test, error: testError } = await this.supabaseService.client
+      .from(TABLES.TESTS)
+      .select('*')
+      .eq('id', attempt.test_id)
+      .single();
+
+    if (testError || !test) throw new NotFoundException('Test not found');
+
+    const { data: answers, error: answersError } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .select(`
+        *,
+        test_question_bank!inner(
+          *,
+          question_bank!inner(*)
+        )
+      `)
+      .eq('attempt_id', attemptId);
+
+    if (answersError) throw answersError;
+    if (!answers?.length) throw new NotFoundException('No answers found for this attempt');
+
+    const autoGradableTypes = new Set([
+      QuestionType.SINGLE_CHOICE,
+      QuestionType.MULTIPLE_CHOICE,
+      QuestionType.TRUE_FALSE,
+      QuestionType.NUMERICAL,
+    ]);
+
+    const summary: AutoGradeSummary = {
+      total: answers.length,
+      autoGraded: 0,
+      correct: 0,
+      incorrect: 0,
+      manualReview: 0,
+      marksAwarded: 0,
+      marksPossible: 0,
+    };
+
+    const reviewQueueEntries: { attempt_id: string; test_answer_id: string }[] = [];
+
+    for (const answer of answers) {
+      const questionBank = answer.test_question_bank.question_bank;
+      const tqb = answer.test_question_bank;
+      const marksPossible = tqb.marks ?? 1;
+      const negativeMark = tqb.negative_mark ?? 0;
+      summary.marksPossible += marksPossible;
+
+      const questionType = questionBank.question_type;
+      const correctAnswer = questionBank.correct_answer;
+
+      if (!correctAnswer || !autoGradableTypes.has(questionType)) {
+        const { error: updateError } = await this.supabaseService.client
+          .from(TABLES.TEST_ANSWERS)
+          .update({
+            is_manual_review: true,
+            evaluated_at: new Date().toISOString(),
+          })
+          .eq('id', answer.id);
+
+        if (updateError) this.logger.error(`Failed to mark answer ${answer.id} for manual review`, updateError);
+
+        reviewQueueEntries.push({
+          attempt_id: attemptId,
+          test_answer_id: answer.id,
+        });
+
+        summary.manualReview++;
+        continue;
+      }
+
+      const isCorrect = this.evaluateAnswer(questionType, answer.answer, correctAnswer);
+      const marksAwarded = isCorrect ? marksPossible : (test.negative_marking ? -Math.abs(negativeMark) : 0);
+
+      const { error: updateError } = await this.supabaseService.client
+        .from(TABLES.TEST_ANSWERS)
+        .update({
+          is_correct: isCorrect,
+          marks_awarded: marksAwarded,
+          evaluated_at: new Date().toISOString(),
+        })
+        .eq('id', answer.id);
+
+      if (updateError) {
+        this.logger.error(`Failed to update answer ${answer.id}`, updateError);
+        continue;
+      }
+
+      summary.autoGraded++;
+      summary.marksAwarded += marksAwarded;
+
+      if (isCorrect) {
+        summary.correct++;
+      } else {
+        summary.incorrect++;
+      }
+    }
+
+    if (reviewQueueEntries.length > 0) {
+      const { error: queueError } = await this.supabaseService.client
+        .from(TABLES.TEST_REVIEW_QUEUE)
+        .insert(reviewQueueEntries.map((entry) => ({
+          attempt_id: entry.attempt_id,
+          test_answer_id: entry.test_answer_id,
+          status: ReviewStatus.PENDING,
+        })));
+
+      if (queueError) this.logger.error('Failed to create review queue entries', queueError);
+    }
+
+    const newStatus = summary.manualReview === 0
+      ? AttemptStatus.EVALUATED
+      : AttemptStatus.PARTIALLY_EVALUATED;
+
+    const { error: statusError } = await this.supabaseService.client
+      .from(TABLES.TEST_ATTEMPTS)
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', attemptId);
+
+    if (statusError) throw statusError;
+
+    if (newStatus === AttemptStatus.EVALUATED) {
+      await this.publishResults(attemptId).catch((err) =>
+        this.logger.error('Auto-publish failed', err),
+      );
+    }
+
+    return { summary, attempt: { ...attempt, status: newStatus } };
+  }
+
+  private evaluateAnswer(questionType: string, userAnswer: any, correctAnswer: string): boolean {
+    if (userAnswer === null || userAnswer === undefined || userAnswer === '') return false;
+
+    try {
+      switch (questionType) {
+        case QuestionType.SINGLE_CHOICE:
+          return String(userAnswer).trim() === String(correctAnswer).trim();
+
+        case QuestionType.MULTIPLE_CHOICE: {
+          const userKeys = this.parseMultiChoiceAnswer(userAnswer);
+          const correctKeys = this.parseMultiChoiceAnswer(correctAnswer);
+          if (userKeys.length !== correctKeys.length) return false;
+          const sortedUser = [...userKeys].sort();
+          const sortedCorrect = [...correctKeys].sort();
+          return sortedUser.every((key, i) => key === sortedCorrect[i]);
+        }
+
+        case QuestionType.TRUE_FALSE:
+          return String(userAnswer).trim().toLowerCase() === String(correctAnswer).trim().toLowerCase();
+
+        case QuestionType.NUMERICAL: {
+          const userNum = parseFloat(String(userAnswer).trim());
+          const correctNum = parseFloat(String(correctAnswer).trim());
+          if (isNaN(userNum) || isNaN(correctNum)) return false;
+          return Math.abs(userNum - correctNum) <= 0.01;
+        }
+
+        default:
+          return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  private parseMultiChoiceAnswer(answer: any): string[] {
+    if (Array.isArray(answer)) return answer.map(String);
+    if (typeof answer === 'string') {
+      return answer
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return [];
+  }
+
+  async getReviewQueue(options: ReviewQueueOptions = {}) {
+    let query = this.supabaseService.client
+      .from(TABLES.TEST_REVIEW_QUEUE)
+      .select(`
+        *,
+        test_attempts!inner(
+          id,
+          status,
+          submitted_at,
+          profiles!inner(id, full_name, email)
+        ),
+        test_answers!inner(
+          id,
+          answer,
+          marks_possible,
+          test_question_bank!inner(
+            question_bank!inner(id, question_text, question_type)
+          )
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (options.status) query = query.eq('status', options.status);
+    if (options.assignedTo) query = query.eq('assigned_to', options.assignedTo);
+    if (options.testId) query = query.eq('test_attempts.test_id', options.testId);
+
+    const page = options.page ?? 1;
+    const limit = options.limit ?? 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return { items: data ?? [], page, limit };
+  }
+
+  async assignForReview(reviewId: string, reviewerId: string) {
+    const { data: existing, error: fetchError } = await this.supabaseService.client
+      .from(TABLES.TEST_REVIEW_QUEUE)
+      .select('id, status')
+      .eq('id', reviewId)
+      .single();
+
+    if (fetchError || !existing) throw new NotFoundException('Review queue item not found');
+
+    const { error } = await this.supabaseService.client
+      .from(TABLES.TEST_REVIEW_QUEUE)
+      .update({
+        assigned_to: reviewerId,
+        status: ReviewStatus.IN_REVIEW,
+      })
+      .eq('id', reviewId);
+
+    if (error) throw error;
+
+    return { id: reviewId, assignedTo: reviewerId, status: ReviewStatus.IN_REVIEW };
+  }
+
+  async submitReview(reviewId: string, dto: { marksAwarded: number; feedback?: string }, evaluatedBy: string) {
+    const { data: reviewItem, error: reviewError } = await this.supabaseService.client
+      .from(TABLES.TEST_REVIEW_QUEUE)
+      .select('*, test_answers!inner(*)')
+      .eq('id', reviewId)
+      .single();
+
+    if (reviewError || !reviewItem) throw new NotFoundException('Review queue item not found');
+
+    const { error: updateAnswerError } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .update({
+        marks_awarded: dto.marksAwarded,
+        feedback: dto.feedback ?? null,
+        evaluated_by: evaluatedBy,
+        evaluated_at: new Date().toISOString(),
+        is_manual_review: false,
+      })
+      .eq('id', reviewItem.test_answer_id);
+
+    if (updateAnswerError) throw updateAnswerError;
+
+    const { error: updateQueueError } = await this.supabaseService.client
+      .from(TABLES.TEST_REVIEW_QUEUE)
+      .update({
+        status: ReviewStatus.REVIEWED,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', reviewId);
+
+    if (updateQueueError) throw updateQueueError;
+
+    const attemptId = reviewItem.attempt_id;
+    const allManualReviewed = await this.checkAllManualReviewsComplete(attemptId);
+    if (allManualReviewed) {
+      const { error: statusError } = await this.supabaseService.client
+        .from(TABLES.TEST_ATTEMPTS)
+        .update({ status: AttemptStatus.EVALUATED, updated_at: new Date().toISOString() })
+        .eq('id', attemptId);
+
+      if (statusError) throw statusError;
+
+      await this.publishResults(attemptId).catch((err) =>
+        this.logger.error('Auto-publish after review failed', err),
+      );
+    }
+
+    return { id: reviewId, status: ReviewStatus.REVIEWED };
+  }
+
+  private async checkAllManualReviewsComplete(attemptId: string): Promise<boolean> {
+    const { count, error } = await this.supabaseService.client
+      .from(TABLES.TEST_REVIEW_QUEUE)
+      .select('id', { count: 'exact', head: true })
+      .eq('attempt_id', attemptId)
+      .neq('status', ReviewStatus.REVIEWED);
+
+    if (error) {
+      this.logger.error('Failed to check manual review status', error);
+      return false;
+    }
+
+    return count === 0;
+  }
+
+  async publishResults(attemptId: string) {
+    const { data: attempt, error: attemptError } = await this.supabaseService.client
+      .from(TABLES.TEST_ATTEMPTS)
+      .select('*, tests(*)')
+      .eq('id', attemptId)
+      .single();
+
+    if (attemptError || !attempt) throw new NotFoundException('Attempt not found');
+
+    const { data: answers, error: answersError } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .select(`
+        *,
+        test_question_bank!inner(
+          *,
+          question_bank!inner(id, topic_id, question_type, difficulty, question_text)
+        )
+      `)
+      .eq('attempt_id', attemptId);
+
+    if (answersError) throw answersError;
+    if (!answers?.length) throw new NotFoundException('No answers found for this attempt');
+
+    const totalMarks = attempt.tests.total_marks;
+    const obtainedMarks = answers.reduce((sum, a) => sum + (a.marks_awarded ?? 0), 0);
+    const totalQuestions = answers.length;
+    const correctAnswers = answers.filter((a) => a.is_correct === true).length;
+    const accuracy = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 10000) / 100 : 0;
+
+    const rank = await this.calculateRank(attempt.test_id, obtainedMarks, attemptId);
+    const topicAnalysis = this.buildTopicAnalysis(answers);
+    const questionAnalysis = this.buildQuestionAnalysis(answers);
+
+    const payload = {
+      attempt_id: attemptId,
+      obtained_marks: obtainedMarks,
+      total_marks: totalMarks,
+      accuracy,
+      rank,
+      topic_analysis: topicAnalysis,
+      question_analysis: questionAnalysis,
+      published_at: new Date().toISOString(),
+    };
+
+    const { data: existing } = await this.supabaseService.client
+      .from(TABLES.TEST_RESULTS)
+      .select('id')
+      .eq('attempt_id', attemptId)
+      .maybeSingle();
+
+    if (existing) {
+      const { error: updateError } = await this.supabaseService.client
+        .from(TABLES.TEST_RESULTS)
+        .update(payload)
+        .eq('id', existing.id);
+
+      if (updateError) throw updateError;
+    } else {
+      const { error: insertError } = await this.supabaseService.client
+        .from(TABLES.TEST_RESULTS)
+        .insert(payload);
+
+      if (insertError) throw insertError;
+    }
+
+    const { error: statusError } = await this.supabaseService.client
+      .from(TABLES.TEST_ATTEMPTS)
+      .update({
+        status: AttemptStatus.PUBLISHED,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', attemptId);
+
+    if (statusError) throw statusError;
+
+    await this.calculateAnalytics(attempt.test_id).catch((err) =>
+      this.logger.error('Analytics recalculation failed', err),
+    );
+
+    return { attemptId, obtainedMarks, totalMarks, accuracy, rank, topicAnalysis, questionAnalysis };
+  }
+
+  private async calculateRank(testId: string, obtainedMarks: number, currentAttemptId: string): Promise<number> {
+    const { data: otherAttempts, error } = await this.supabaseService.client
+      .from(TABLES.TEST_ATTEMPTS)
+      .select('id')
+      .eq('test_id', testId)
+      .in('status', [AttemptStatus.PUBLISHED, AttemptStatus.EVALUATED])
+      .neq('id', currentAttemptId);
+
+    if (error) {
+      this.logger.error('Failed to calculate rank', error);
+      return 1;
+    }
+
+    if (!otherAttempts?.length) return 1;
+
+    const attemptIds = otherAttempts.map((a) => a.id);
+    const { data: allAnswers, error: answersError } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .select('attempt_id, marks_awarded')
+      .in('attempt_id', attemptIds);
+
+    if (answersError) {
+      this.logger.error('Failed to fetch answers for rank calculation', answersError);
+      return 1;
+    }
+
+    const scoreMap = new Map<string, number>();
+    for (const ans of allAnswers ?? []) {
+      const current = scoreMap.get(ans.attempt_id) ?? 0;
+      scoreMap.set(ans.attempt_id, current + (ans.marks_awarded ?? 0));
+    }
+
+    let betterCount = 0;
+    for (const [, total] of scoreMap) {
+      if (total > obtainedMarks) betterCount++;
+    }
+
+    return betterCount + 1;
+  }
+
+  private buildTopicAnalysis(answers: any[]) {
+    const topicMap = new Map<string, { correct: number; total: number; marks: number }>();
+
+    for (const answer of answers) {
+      const topicId = answer.test_question_bank?.question_bank?.topic_id ?? 'unknown';
+      const marks = answer.marks_awarded ?? 0;
+      const isCorrect = answer.is_correct === true;
+
+      if (!topicMap.has(topicId)) {
+        topicMap.set(topicId, { correct: 0, total: 0, marks: 0 });
+      }
+
+      const topic = topicMap.get(topicId)!;
+      topic.total++;
+      topic.marks += marks;
+      if (isCorrect) topic.correct++;
+    }
+
+    return Array.from(topicMap.entries()).map(([topicId, data]) => ({
+      topicId,
+      correct: data.correct,
+      total: data.total,
+      marks: data.marks,
+      accuracy: data.total > 0 ? Math.round((data.correct / data.total) * 10000) / 100 : 0,
+    }));
+  }
+
+  private buildQuestionAnalysis(answers: any[]) {
+    return answers.map((answer) => ({
+      questionId: answer.test_question_bank?.question_bank?.id,
+      questionText: answer.test_question_bank?.question_bank?.question_text,
+      questionType: answer.test_question_bank?.question_bank?.question_type,
+      userAnswer: answer.answer,
+      correctAnswer: answer.test_question_bank?.question_bank?.correct_answer,
+      isCorrect: answer.is_correct,
+      marksPossible: answer.marks_possible ?? answer.test_question_bank?.marks ?? 1,
+      marksAwarded: answer.marks_awarded ?? 0,
+      feedback: answer.feedback,
+    }));
+  }
+
+  async calculateAnalytics(testId: string) {
+    const { data: results, error: resultsError } = await this.supabaseService.client
+      .from(TABLES.TEST_RESULTS)
+      .select(`
+        *,
+        test_attempts!inner(
+          student_id,
+          started_at,
+          submitted_at,
+          profiles!inner(batch_id),
+          tests!inner(passing_marks)
+        )
+      `)
+      .eq('test_attempts.test_id', testId);
+
+    if (resultsError) throw resultsError;
+    if (!results?.length) return { testId, message: 'No published results yet' };
+
+    const scores = results.map((r) => r.obtained_marks);
+    const totalAttempts = results.length;
+    const averageScore = scores.reduce((a, b) => a + b, 0) / totalAttempts;
+    const highest = Math.max(...scores);
+    const lowest = Math.min(...scores);
+    const sorted = [...scores].sort((a, b) => a - b);
+    const median = totalAttempts % 2 === 0
+      ? (sorted[totalAttempts / 2 - 1] + sorted[totalAttempts / 2]) / 2
+      : sorted[Math.floor(totalAttempts / 2)];
+
+    const passMarks = results[0]?.test_attempts?.tests?.passing_marks ?? 0;
+    const passed = scores.filter((s) => s >= passMarks).length;
+    const passRate = Math.round((passed / totalAttempts) * 10000) / 100;
+    const averageAccuracy = results.reduce((sum, r) => sum + (r.accuracy ?? 0), 0) / totalAttempts;
+
+    const durations = results
+      .map((r) => {
+        const submitted = r.test_attempts?.submitted_at;
+        const started = r.test_attempts?.started_at;
+        if (submitted && started) {
+          return (new Date(submitted).getTime() - new Date(started).getTime()) / 60000;
+        }
+        return null;
+      })
+      .filter((d): d is number => d !== null);
+
+    const averageDuration = durations.length > 0
+      ? durations.reduce((a, b) => a + b, 0) / durations.length
+      : 0;
+
+    const { data: allAnswers, error: allAnswersError } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .select(`
+        is_correct,
+        test_question_bank!inner(
+          question_bank!inner(id, question_text, topic_id, difficulty),
+          marks
+        )
+      `)
+      .in(
+        'attempt_id',
+        results.map((r) => r.attempt_id),
+      );
+
+    if (allAnswersError) throw allAnswersError;
+
+    const questionPerformance = this.buildQuestionPerformance(allAnswers ?? []);
+    const topicPerformance = this.buildTopicPerformance(allAnswers ?? []);
+
+    const batchPerformance = await this.buildBatchPerformance(results);
+
+    const snapshot = {
+      test_id: testId,
+      total_attempts: totalAttempts,
+      average_score: Math.round(averageScore * 100) / 100,
+      highest,
+      lowest,
+      median,
+      pass_rate: passRate,
+      average_accuracy: Math.round(averageAccuracy * 100) / 100,
+      average_duration: Math.round(averageDuration * 100) / 100,
+      question_performance: questionPerformance,
+      topic_performance: topicPerformance,
+      batch_performance: batchPerformance,
+      calculated_at: new Date().toISOString(),
+    };
+
+    const { data: existingSnapshot } = await this.supabaseService.client
+      .from(TABLES.TEST_ANALYTICS_SNAPSHOTS)
+      .select('id')
+      .eq('test_id', testId)
+      .maybeSingle();
+
+    if (existingSnapshot) {
+      const { error: updateError } = await this.supabaseService.client
+        .from(TABLES.TEST_ANALYTICS_SNAPSHOTS)
+        .update(snapshot)
+        .eq('id', existingSnapshot.id);
+
+      if (updateError) throw updateError;
+    } else {
+      const { error: insertError } = await this.supabaseService.client
+        .from(TABLES.TEST_ANALYTICS_SNAPSHOTS)
+        .insert(snapshot);
+
+      if (insertError) throw insertError;
+    }
+
+    return snapshot;
+  }
+
+  private buildQuestionPerformance(answers: any[]) {
+    const questionMap = new Map<string, { correct: number; total: number; questionText: string }>();
+
+    for (const answer of answers) {
+      const qb = answer.test_question_bank?.question_bank;
+      if (!qb) continue;
+
+      const questionId = qb.id;
+      if (!questionMap.has(questionId)) {
+        questionMap.set(questionId, { correct: 0, total: 0, questionText: qb.question_text ?? '' });
+      }
+
+      const entry = questionMap.get(questionId)!;
+      entry.total++;
+      if (answer.is_correct === true) entry.correct++;
+    }
+
+    return Array.from(questionMap.entries()).map(([questionId, data]) => ({
+      questionId,
+      questionText: data.questionText,
+      correct: data.correct,
+      total: data.total,
+      accuracy: data.total > 0 ? Math.round((data.correct / data.total) * 10000) / 100 : 0,
+    }));
+  }
+
+  private buildTopicPerformance(answers: any[]) {
+    const topicMap = new Map<string, { correct: number; total: number }>();
+
+    for (const answer of answers) {
+      const qb = answer.test_question_bank?.question_bank;
+      if (!qb) continue;
+
+      const topicId = qb.topic_id ?? 'unknown';
+      if (!topicMap.has(topicId)) {
+        topicMap.set(topicId, { correct: 0, total: 0 });
+      }
+
+      const entry = topicMap.get(topicId)!;
+      entry.total++;
+      if (answer.is_correct === true) entry.correct++;
+    }
+
+    return Array.from(topicMap.entries()).map(([topicId, data]) => ({
+      topicId,
+      correct: data.correct,
+      total: data.total,
+      accuracy: data.total > 0 ? Math.round((data.correct / data.total) * 10000) / 100 : 0,
+    }));
+  }
+
+  private async buildBatchPerformance(results: any[]) {
+    const batchMap = new Map<string, { attempts: number; totalScore: number; totalMarks: number }>();
+
+    for (const result of results) {
+      const batchId = result.test_attempts?.profiles?.batch_id ?? 'unknown';
+
+      if (!batchMap.has(batchId)) {
+        batchMap.set(batchId, { attempts: 0, totalScore: 0, totalMarks: 0 });
+      }
+
+      const entry = batchMap.get(batchId)!;
+      entry.attempts++;
+      entry.totalScore += result.obtained_marks ?? 0;
+      entry.totalMarks += result.total_marks ?? 0;
+    }
+
+    return Array.from(batchMap.entries()).map(([batchId, data]) => ({
+      batchId,
+      attempts: data.attempts,
+      averageScore: data.attempts > 0 ? Math.round((data.totalScore / data.attempts) * 100) / 100 : 0,
+      totalMarks: data.totalMarks,
+    }));
+  }
+}

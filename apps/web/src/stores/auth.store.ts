@@ -1,22 +1,80 @@
 import { create } from 'zustand';
 
+export type SessionStatus = 'idle' | 'loading' | 'authenticated' | 'expired' | 'offline' | 'takeover';
+
+export interface AuthUser {
+  id: string;
+  name?: string;
+  email: string;
+  role: string;
+}
+
 interface AuthState {
-  user: { id: string; email: string; role: string } | null;
+  user: AuthUser | null;
   token: string | null;
+  status: SessionStatus;
+  error: string | null;
   mustChangePassword: boolean;
+  sessionCount: number;
+
   setAuth: (
-    user: { id: string; email: string; role: string },
+    user: AuthUser,
+    token: string,
+    mustChangePassword?: boolean,
+  ) => void;
+  setStatus: (status: SessionStatus) => void;
+  setError: (error: string | null) => void;
+  hydrate: (
+    user: AuthUser,
     token: string,
     mustChangePassword?: boolean,
   ) => void;
   logout: () => void;
+  updateUser: (partial: Partial<AuthUser>) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
+  status: 'idle',
+  error: null,
   mustChangePassword: false,
+  sessionCount: 0,
+
   setAuth: (user, token, mustChangePassword = false) =>
-    set({ user, token, mustChangePassword }),
-  logout: () => set({ user: null, token: null, mustChangePassword: false }),
+    set((state) => ({
+      user,
+      token,
+      mustChangePassword,
+      status: 'authenticated',
+      error: null,
+      sessionCount: state.sessionCount + 1,
+    })),
+
+  updateUser: (partial: Partial<AuthUser>) =>
+    set((state) => ({
+      user: state.user ? { ...state.user, ...partial } : state.user,
+    })),
+
+  setStatus: (status) => set({ status }),
+
+  setError: (error) => set({ error }),
+
+  hydrate: (user, token, mustChangePassword = false) =>
+    set({
+      user,
+      token,
+      mustChangePassword,
+      status: 'authenticated',
+      error: null,
+    }),
+
+  logout: () =>
+    set({
+      user: null,
+      token: null,
+      status: 'idle',
+      error: null,
+      mustChangePassword: false,
+    }),
 }));

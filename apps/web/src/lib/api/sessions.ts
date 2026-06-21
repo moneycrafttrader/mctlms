@@ -22,22 +22,19 @@ export interface ScheduledSession {
 
 export async function scheduleSession(
   data: ScheduleSessionData,
-  token?: string,
 ) {
   return fetchApi<ScheduledSession>(API_ROUTES.ADMIN_SESSIONS, {
     method: 'POST',
     body: JSON.stringify(data),
-    token,
   });
 }
 
-export async function getSessions(token?: string) {
-  return fetchApi<ScheduledSession[]>(API_ROUTES.ADMIN_SESSIONS, { token });
+export async function getSessions() {
+  return fetchApi<ScheduledSession[]>(API_ROUTES.ADMIN_SESSIONS);
 }
 
-export async function deleteSession(id: string, token?: string) {
+export async function deleteSession(id: string) {
   return fetchApi<{ deleted: boolean }>(`${API_ROUTES.ADMIN_SESSIONS}/${id}`, {
     method: 'DELETE',
-    token,
   });
 }

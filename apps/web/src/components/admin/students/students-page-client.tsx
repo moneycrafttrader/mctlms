@@ -28,13 +28,12 @@ import { AssignBatchModal } from './assign-batch-modal';
 interface StudentsPageClientProps {
   initialStudents: User[];
   initialTotal: number;
-  token?: string;
+
 }
 
 export function StudentsPageClient({
   initialStudents,
   initialTotal,
-  token,
 }: StudentsPageClientProps) {
   const router = useRouter();
   const [students, setStudents] = useState<User[]>(initialStudents);
@@ -63,25 +62,25 @@ export function StudentsPageClient({
 
   const refresh = useCallback(async () => {
     try {
-      const result = await getStudents(token);
+      const result = await getStudents();
       setStudents(result.items);
       setTotal(result.total);
     } catch {
       // silent
     }
     router.refresh();
-  }, [token, router]);
+  }, [router]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     try {
-      await deleteUser(deleteTarget.id, token);
+      await deleteUser(deleteTarget.id);
       setDeleteTarget(null);
       await refresh();
     } catch {
       // silent
     }
-  }, [deleteTarget, token, refresh]);
+  }, [deleteTarget, refresh]);
 
   const resetForm = () => {
     setFirstName('');
@@ -96,15 +95,12 @@ export function StudentsPageClient({
     setAddError('');
     setSubmitting(true);
     try {
-      await createUser(
-        {
-          name: `${firstName} ${lastName}`.trim(),
-          email,
-          role: 'student',
-          phone: phone || undefined,
-        },
-        token,
-      );
+      await createUser({
+        name: `${firstName} ${lastName}`.trim(),
+        email,
+        role: 'student',
+        phone: phone || undefined,
+      });
       resetForm();
       setShowAddModal(false);
       refresh();
@@ -388,7 +384,7 @@ export function StudentsPageClient({
                 </form>
               ) : (
                 <>
-                  <FileDropzone onUploadSuccess={refresh} token={token} />
+                  <FileDropzone onUploadSuccess={refresh} />
                 </>
               )}
             </div>
@@ -418,7 +414,6 @@ export function StudentsPageClient({
           setSelectedIds(new Set());
           refresh();
         }}
-        token={token}
       />
 
       <ConfirmDialog

@@ -18,7 +18,6 @@ interface MarkPaidModalProps {
   amount: number;
   onClose: () => void;
   onConfirm: () => void;
-  token?: string;
 }
 
 export function MarkPaidModal({
@@ -27,7 +26,6 @@ export function MarkPaidModal({
   amount,
   onClose,
   onConfirm,
-  token,
 }: MarkPaidModalProps) {
   const [paymentMethod, setPaymentMethod] = useState('upi');
   const [transactionId, setTransactionId] = useState('');
@@ -44,7 +42,6 @@ export function MarkPaidModal({
       await markInstallmentPaid(
         installmentId,
         { paymentMethod, transactionId: transactionId || undefined },
-        token,
       );
       onConfirm();
     } catch (err: any) {

@@ -1,6 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import { getMyVideos, getVideoPlaybackUrl } from '@/lib/api/videos';
+import { getMyVideos } from '@/lib/api/videos';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { VideoPlayerClient } from './video-player-client';
 
@@ -11,30 +9,11 @@ interface Props {
 }
 
 export default async function StudentVideoPlayerPage({ params }: Props) {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
-
-  if (!token) {
-    redirect('/login');
-  }
-
-  let playbackUrl = '';
-  let thumbnail = '';
   let videoTitle = '';
   let videoDate = '';
 
   try {
-    const [playback, recordings] = await Promise.all([
-      getVideoPlaybackUrl(params.recordingId, token),
-      getMyVideos(undefined, token).catch(() => []),
-    ]);
-
-    playbackUrl = playback.url;
-    thumbnail = playback.thumbnail;
-
+    const recordings = await getMyVideos().catch(() => []);
     const video = recordings.find((r) => r.id === params.recordingId);
     if (video) {
       videoTitle = video.title;
@@ -45,18 +24,7 @@ export default async function StudentVideoPlayerPage({ params }: Props) {
       });
     }
   } catch {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center px-4">
-        <div className="text-center">
-          <h2 className="text-lg font-bold text-text-primary">
-            Failed to load video
-          </h2>
-          <p className="mt-2 text-sm text-text-secondary">
-            The recording may not be ready or you may not have access.
-          </p>
-        </div>
-      </div>
-    );
+    // Metadata unavailable — player will still work
   }
 
   return (
@@ -64,8 +32,8 @@ export default async function StudentVideoPlayerPage({ params }: Props) {
       <PageHeader title={videoTitle || 'Recording'} showBack />
       <div className="md:px-0">
         <VideoPlayerClient
-          playbackUrl={playbackUrl}
-          thumbnail={thumbnail}
+          recordingId={params.recordingId}
+          sessionId=""
           title={videoTitle}
           date={videoDate}
         />

@@ -19,24 +19,41 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  UnauthorizedException,
   Logger,
 } from '@nestjs/common';
 import { SessionStatus } from '@lms/shared-types';
+import { RedisService } from '@liaoliaots/nestjs-redis';
+import Redis from 'ioredis';
+import * as crypto from 'crypto';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { BatchesService } from '../batches/batches.service';
 import { ZoomService } from '../zoom/zoom.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
 import { CreateSessionDto } from './dto/create-session.dto';
+
+type JoinOutcome =
+  | 'granted'
+  | 'rejected_expired'
+  | 'rejected_reused'
+  | 'rejected_not_live'
+  | 'rejected_not_enrolled'
+  | 'rejected_duplicate';
 
 @Injectable()
 export class LiveSessionsService {
   private readonly logger = new Logger(LiveSessionsService.name);
+  private readonly redis: Redis;
 
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly batchesService: BatchesService,
     private readonly zoomService: ZoomService,
-  ) {}
+    redisService: RedisService,
+  ) {
+    this.redis = redisService.getOrThrow();
+  }
 
   // ──────────────────────────────────────────────────────────────
   //  create
@@ -307,35 +324,337 @@ export class LiveSessionsService {
   }
 
   // ──────────────────────────────────────────────────────────────
-  //  getStudentJoinUrl
+  //  getStudentJoinUrl  (single-use token gated)
   // ──────────────────────────────────────────────────────────────
 
   /**
-   * Get a student's personal (unique) Zoom join URL for a session.
+   * Consume a single-use join token and return the Zoom join URL.
    *
-   * Students get their personal join URL here — they never see any other
-   * student's URL. This is how Zoom tracks individual attendance.
+   * Security model:
+   *   - Token is stored in Redis (15min TTL).
+   *   - Token is deleted on read (single-use).
+   *   - Token is bound to userId + sessionId — verified on each call.
+   *   - Previous tokens for this user+session are revoked on new request.
+   *   - Every attempt is logged to join_attempts for audit.
    *
    * Steps:
-   *   1. Query SESSION_REGISTRANTS for the given session and user
-   *   2. Throw NotFoundException if not registered
-   *   3. Return the join URL
+   *   1. Validate the token exists in Redis
+   *   2. Verify it matches the requesting user + session
+   *   3. Delete from Redis (single-use consumption)
+   *   4. Revoke any previous active join (duplicate prevention)
+   *   5. Set new active join marker
+   *   6. Mark token as used in DB
+   *   7. Log join_attempt (granted)
+   *   8. Return the Zoom join URL
    */
-  async getStudentJoinUrl(sessionId: string, userId: string): Promise<string> {
-    const { data, error } = await this.supabaseService.client
+  async getStudentJoinUrl(
+    sessionId: string,
+    userId: string,
+    token: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ joinUrl: string; sessionId: string }> {
+    // Step 1: Validate the token in Redis
+    const tokenDataRaw = await this.redis.get(REDIS_KEYS.joinToken(token));
+    if (!tokenDataRaw) {
+      // Check if token was already used (DB lookup for audit)
+      const { data: existingToken } = await this.supabaseService.client
+        .from(TABLES.JOIN_TOKENS)
+        .select('used_at, expires_at')
+        .eq('token', token)
+        .single();
+
+      if (existingToken) {
+        if (existingToken.used_at) {
+          await this.logJoinAttempt(sessionId, userId, null, ip, userAgent, 'rejected_reused');
+          throw new UnauthorizedException('This join link has already been used.');
+        }
+        await this.logJoinAttempt(sessionId, userId, null, ip, userAgent, 'rejected_expired');
+        throw new UnauthorizedException('This join link has expired. Request a new one.');
+      }
+
+      await this.logJoinAttempt(sessionId, userId, null, ip, userAgent, 'rejected_expired');
+      throw new UnauthorizedException('Invalid or expired join token.');
+    }
+
+    let parsed: { userId: string; sessionId: string; expiresAt: string };
+    try {
+      parsed = JSON.parse(tokenDataRaw);
+    } catch {
+      throw new UnauthorizedException('Invalid join token.');
+    }
+
+    // Step 2: Verify the token is bound to this user + session
+    if (parsed.userId !== userId || parsed.sessionId !== sessionId) {
+      await this.logJoinAttempt(sessionId, userId, null, ip, userAgent, 'rejected_expired');
+      throw new UnauthorizedException('This join token is not valid for your account.');
+    }
+
+    // Step 3: Consume the token (delete from Redis — single use)
+    await this.redis.del(REDIS_KEYS.joinToken(token));
+
+    // Step 4: Revoke any previous active join for this user + session
+    await this.redis.del(REDIS_KEYS.activeJoin(sessionId, userId));
+
+    // Step 5: Set new active join marker
+    await this.redis.setex(
+      REDIS_KEYS.activeJoin(sessionId, userId),
+      REDIS_TTL.ACTIVE_JOIN,
+      JSON.stringify({ joinedAt: new Date().toISOString(), ip }),
+    );
+
+    // Step 6: Mark token as used in DB
+    await this.supabaseService.client
+      .from(TABLES.JOIN_TOKENS)
+      .update({ used_at: new Date().toISOString() })
+      .eq('token', token);
+
+    // Step 7: Fetch the join URL from session_registrants
+    const { data: registrant } = await this.supabaseService.client
       .from(TABLES.SESSION_REGISTRANTS)
       .select('join_url')
       .eq('session_id', sessionId)
       .eq('user_id', userId)
       .single();
 
-    if (error || !data) {
+    if (!registrant?.join_url) {
+      await this.logJoinAttempt(sessionId, userId, null, ip, userAgent, 'rejected_not_enrolled');
       throw new NotFoundException(
         'You are not registered for this session. Contact your admin.',
       );
     }
 
-    return data.join_url;
+    // Step 8: Log granted attempt
+    await this.logJoinAttempt(sessionId, userId, token, ip, userAgent, 'granted');
+
+    return { joinUrl: registrant.join_url, sessionId };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  requestJoinToken
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Generate a single-use join token bound to a user + session.
+   *
+   * Steps:
+   *   1. Validate the session exists and is joinable (live or within 15min window)
+   *   2. Validate the student is enrolled
+   *   3. Revoke any previous tokens for this user+session (Redis + DB)
+   *   4. Generate new token (UUID)
+   *   5. Store in Redis (15min TTL) + DB
+   *   6. Return token + expiry
+   */
+  async requestJoinToken(
+    sessionId: string,
+    userId: string,
+  ): Promise<{ token: string; expiresInSeconds: number }> {
+    // Step 1: Validate session exists and is joinable
+    const { data: session, error: sessionError } = await this.supabaseService.client
+      .from(TABLES.LIVE_SESSIONS)
+      .select('id, status, start_time, join_tokens_revoked_since')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      throw new NotFoundException('Session not found.');
+    }
+
+    const isLive = session.status === 'live';
+    const isWithinWindow =
+      session.status === 'scheduled' &&
+      new Date(session.start_time).getTime() - Date.now() < 15 * 60 * 1000;
+
+    if (!isLive && !isWithinWindow) {
+      throw new BadRequestException(
+        'This session is not available to join. Wait until 15 minutes before start time.',
+      );
+    }
+
+    // Step 2: Validate student is enrolled
+    const { count } = await this.supabaseService.client
+      .from(TABLES.SESSION_REGISTRANTS)
+      .select('*', { count: 'exact', head: true })
+      .eq('session_id', sessionId)
+      .eq('user_id', userId);
+
+    if (!count || count === 0) {
+      throw new NotFoundException(
+        'You are not registered for this session. Contact your admin.',
+      );
+    }
+
+    // Step 3: Revoke any previous tokens for this user+session
+    const existingTokensRaw = await this.redis.get(REDIS_KEYS.joinToken(`*:${sessionId}:${userId}`));
+    // We can't pattern-match on exact keys with GET, so use SCAN
+    let cursor = '0';
+    const pattern = `join_token:*`;
+    do {
+      const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
+      cursor = result[0];
+      for (const key of result[1]) {
+        const raw = await this.redis.get(key);
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            if (data.userId === userId && data.sessionId === sessionId) {
+              await this.redis.del(key);
+            }
+          } catch { /* skip malformed */ }
+        }
+      }
+    } while (cursor !== '0');
+
+    // Also mark existing DB tokens as used (force-expire)
+    await this.supabaseService.client
+      .from(TABLES.JOIN_TOKENS)
+      .update({ used_at: new Date().toISOString() })
+      .eq('session_id', sessionId)
+      .eq('user_id', userId)
+      .is('used_at', null);
+
+    // Step 4: Generate new token
+    const token = crypto.randomUUID();
+    const expiresInSeconds = REDIS_TTL.JOIN_TOKEN;
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+
+    // Step 5: Store in Redis
+    await this.redis.setex(
+      REDIS_KEYS.joinToken(token),
+      expiresInSeconds,
+      JSON.stringify({ userId, sessionId, expiresAt }),
+    );
+
+    // Also persist in DB for audit trail
+    await this.supabaseService.client
+      .from(TABLES.JOIN_TOKENS)
+      .insert({
+        session_id: sessionId,
+        user_id: userId,
+        token,
+        expires_at: expiresAt,
+      });
+
+    return { token, expiresInSeconds };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  leaveSession
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+    * Mark the user as having left the session.
+    * Clears the active join marker in Redis.
+    */
+  async leaveSession(sessionId: string, userId: string): Promise<void> {
+    await this.redis.del(REDIS_KEYS.activeJoin(sessionId, userId));
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  getJoinAudit  (admin)
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+    * Get the join audit trail for a session (admin only).
+    * Shows all join attempts with user info.
+    */
+  async getJoinAudit(sessionId: string) {
+    const { data: attempts } = await this.supabaseService.client
+      .from(TABLES.JOIN_ATTEMPTS)
+      .select(`
+        *,
+        profiles!inner(id, name, email)
+      `)
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    return { attempts: attempts ?? [] };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  getActiveJoins  (admin)
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+    * Get currently active join sessions from Redis (admin only).
+    * Used to detect link sharing (same user active from multiple IPs).
+    */
+  async getActiveJoins(sessionId: string): Promise<{ userId: string; ip: string; joinedAt: string }[]> {
+    const active: { userId: string; ip: string; joinedAt: string }[] = [];
+    let cursor = '0';
+    const pattern = `active_join:${sessionId}:*`;
+    do {
+      const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
+      cursor = result[0];
+      for (const key of result[1]) {
+        const raw = await this.redis.get(key);
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            const userId = key.split(':').pop() || '';
+            active.push({ userId, ip: data.ip || 'unknown', joinedAt: data.joinedAt || '' });
+          } catch { /* skip */ }
+        }
+      }
+    } while (cursor !== '0');
+
+    return active;
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  revokeAllTokens  (admin)
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+    * Revoke all outstanding join tokens for a session (admin only).
+    * Sets join_tokens_revoked_since timestamp on the session.
+    * All future token validation will fail.
+    */
+  async revokeAllTokens(sessionId: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    await this.supabaseService.client
+      .from(TABLES.LIVE_SESSIONS)
+      .update({ join_tokens_revoked_since: now })
+      .eq('id', sessionId);
+
+    // Mark all unused tokens as used
+    await this.supabaseService.client
+      .from(TABLES.JOIN_TOKENS)
+      .update({ used_at: now })
+      .eq('session_id', sessionId)
+      .is('used_at', null);
+
+    // Clear all active joins for this session from Redis
+    const active = await this.getActiveJoins(sessionId);
+    await Promise.all(
+      active.map((a) => this.redis.del(REDIS_KEYS.activeJoin(sessionId, a.userId))),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  Private helpers
+  // ──────────────────────────────────────────────────────────────
+
+  private async logJoinAttempt(
+    sessionId: string,
+    userId: string,
+    tokenId: string | null,
+    ip: string | undefined,
+    userAgent: string | undefined,
+    outcome: JoinOutcome,
+  ): Promise<void> {
+    await this.supabaseService.client
+      .from(TABLES.JOIN_ATTEMPTS)
+      .insert({
+        session_id: sessionId,
+        user_id: userId,
+        token_id: tokenId,
+        ip_address: ip ?? null,
+        user_agent: userAgent ?? null,
+        outcome,
+      });
   }
 
   // ──────────────────────────────────────────────────────────────

@@ -10,7 +10,6 @@ interface ZoomWebinarPlayerProps {
   password?: string;
   userName: string;
   userEmail?: string;
-  token?: string;
   onLeave?: () => void;
 }
 
@@ -37,7 +36,6 @@ export function ZoomWebinarPlayer({
   password,
   userName,
   userEmail,
-  token,
   onLeave,
 }: ZoomWebinarPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,7 +61,7 @@ export function ZoomWebinarPlayer({
       try {
         setState({ phase: 'loading' });
 
-        signatureData = await getZoomSignature(meetingNumber, 0, token);
+        signatureData = await getZoomSignature(meetingNumber, 0);
 
         if (!mountedRef.current) return;
 
@@ -129,7 +127,7 @@ export function ZoomWebinarPlayer({
         zoomClientRef.current = null;
       }
     };
-  }, [meetingNumber, password, userName, userEmail, token]);
+  }, [meetingNumber, password, userName, userEmail]);
 
   return (
     <div className="relative w-full" style={{ height: '600px' }}>

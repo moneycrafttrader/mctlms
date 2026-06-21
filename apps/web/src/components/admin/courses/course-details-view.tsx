@@ -20,7 +20,6 @@ interface CourseDetailsViewProps {
   initialStats: CourseStats;
   initialBatches: Batch[];
   allCourses: Course[];
-  token?: string;
 }
 
 export function CourseDetailsView({
@@ -29,7 +28,6 @@ export function CourseDetailsView({
   initialStats,
   initialBatches,
   allCourses,
-  token,
 }: CourseDetailsViewProps) {
   const [stats, setStats] = useState<CourseStats>(initialStats);
   const [batches, setBatches] = useState<Batch[]>(initialBatches);
@@ -47,15 +45,15 @@ export function CourseDetailsView({
   const refresh = useCallback(async () => {
     try {
       const [newStats, newBatches] = await Promise.all([
-        getCourseStats(courseId, token),
-        getCourseBatches(courseId, token),
+        getCourseStats(courseId),
+        getCourseBatches(courseId),
       ]);
       setStats(newStats);
       setBatches(newBatches);
     } catch {
       // silent
     }
-  }, [courseId, token]);
+  }, [courseId]);
 
   const openReassignModal = (batch: Batch) => {
     setBatchForReassign({ id: batch.id, name: batch.name });
@@ -174,7 +172,6 @@ export function CourseDetailsView({
         batchId={studentsBatch?.id ?? ''}
         batchName={studentsBatch?.name ?? ''}
         onClose={() => setStudentsBatch(null)}
-        token={token}
       />
 
       {/* Reassign Modal */}
@@ -197,7 +194,6 @@ export function CourseDetailsView({
               setBatchForReassign(null);
               refresh();
             }}
-            token={token}
           />
         )}
       </Modal>

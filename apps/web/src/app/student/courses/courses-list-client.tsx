@@ -6,7 +6,6 @@ import { type StudentCourse } from '@/lib/api/courses';
 
 interface Props {
   courses: StudentCourse[];
-  token?: string;
 }
 
 export function CoursesListClient({ courses }: Props) {

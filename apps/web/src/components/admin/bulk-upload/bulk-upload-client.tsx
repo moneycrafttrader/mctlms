@@ -7,20 +7,19 @@ import { getBulkUploadJobs, type BulkUploadJob } from '@/lib/api/bulk-upload';
 
 interface BulkUploadClientProps {
   initialJobs: BulkUploadJob[];
-  token?: string;
 }
 
-export function BulkUploadClient({ initialJobs, token }: BulkUploadClientProps) {
+export function BulkUploadClient({ initialJobs }: BulkUploadClientProps) {
   const [jobs, setJobs] = useState<BulkUploadJob[]>(initialJobs);
 
   const refresh = useCallback(async () => {
     try {
-      const updated = await getBulkUploadJobs(token);
+      const updated = await getBulkUploadJobs();
       setJobs(updated);
     } catch {
       // silent
     }
-  }, [token]);
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
@@ -31,7 +30,7 @@ export function BulkUploadClient({ initialJobs, token }: BulkUploadClientProps) 
         </p>
       </div>
 
-      <FileDropzone onUploadSuccess={refresh} token={token} />
+      <FileDropzone onUploadSuccess={refresh} />
       <JobsHistory jobs={jobs} />
     </div>
   );

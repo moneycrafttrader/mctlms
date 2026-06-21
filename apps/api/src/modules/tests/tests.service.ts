@@ -1,22 +1,262 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { SupabaseService } from '../../common/services/supabase.service';
+import { TABLES } from '../../common/constants/tables.constant';
 import { CreateTestDto } from './dto/create-test.dto';
-import { SubmitAttemptDto } from './dto/submit-attempt.dto';
+import { UpdateTestDto } from './dto/update-test.dto';
+
+const TEST_SELECT = `
+  *,
+  test_batches!inner(batch_id, batches(name)),
+  test_sections(*),
+  test_question_bank(
+    *,
+    question_bank(id, question_text, question_type, options, correct_answer, explanation, difficulty, topic_id, topics(name))
+  )
+`;
 
 @Injectable()
 export class TestsService {
-  findAll() {
-    return [];
+  private readonly logger = new Logger(TestsService.name);
+
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async create(dto: CreateTestDto, createdBy: string) {
+    const { sections, questions, batches, ...testData } = dto;
+
+    const { data: test, error } = await this.supabaseService.client
+      .from(TABLES.TESTS)
+      .insert({
+        title: testData.title,
+        description: testData.description ?? null,
+        duration_minutes: testData.durationMinutes ?? null,
+        total_marks: testData.totalMarks,
+        passing_marks: testData.passingMarks ?? Math.ceil(testData.totalMarks * 0.4),
+        status: testData.startTime ? 'scheduled' : 'draft',
+        start_time: testData.startTime ?? null,
+        end_time: testData.endTime ?? null,
+        shuffle_questions: testData.shuffleQuestions ?? false,
+        shuffle_options: testData.shuffleOptions ?? false,
+        show_result_immediately: testData.showResultImmediately ?? true,
+        negative_marking: testData.negativeMarking ?? false,
+        negative_per_question: testData.negativePerQuestion ?? 0.25,
+        max_attempts: testData.maxAttempts ?? 1,
+        instructions: testData.instructions ?? null,
+        created_by: createdBy,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return this.insertRelations(test.id, sections, questions, batches);
   }
 
-  findOne(id: string) {
-    return { id };
+  async duplicate(id: string, createdBy: string) {
+    const original = await this.findOne(id);
+    if (!original) throw new NotFoundException('Test not found');
+
+    const { data: test, error } = await this.supabaseService.client
+      .from(TABLES.TESTS)
+      .insert({
+        title: `${original.title} (Copy)`,
+        description: original.description,
+        duration_minutes: original.duration_minutes,
+        total_marks: original.total_marks,
+        passing_marks: original.passing_marks,
+        status: 'draft',
+        shuffle_questions: original.shuffle_questions,
+        shuffle_options: original.shuffle_options,
+        show_result_immediately: original.show_result_immediately,
+        negative_marking: original.negative_marking,
+        negative_per_question: original.negative_per_question,
+        max_attempts: original.max_attempts,
+        instructions: original.instructions,
+        created_by: createdBy,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const sections = original.test_sections?.map((s: any) => ({
+      title: s.title,
+      description: s.description,
+      instructions: s.instructions,
+      sort_order: s.sort_order,
+    })) ?? [];
+
+    const questions = original.test_question_bank?.map((q: any) => ({
+      questionBankId: q.question_bank_id,
+      marks: q.marks,
+      negativeMark: q.negative_mark,
+      sortOrder: q.sort_order,
+      sectionId: q.section_id,
+      isCompulsory: q.is_compulsory,
+    })) ?? [];
+
+    const batches = original.test_batches?.map((b: any) => ({
+      batchId: b.batch_id,
+    })) ?? [];
+
+    return this.insertRelations(test.id, sections, questions, batches);
   }
 
-  create(dto: CreateTestDto) {
-    return dto;
+  private async insertRelations(
+    testId: string,
+    sections?: any[],
+    questions?: any[],
+    batches?: any[],
+  ) {
+    // Insert sections
+    if (sections?.length) {
+      const { data: inserted } = await this.supabaseService.client
+        .from(TABLES.TEST_SECTIONS)
+        .insert(sections.map((s, i) => ({
+          test_id: testId,
+          title: s.title,
+          description: s.description ?? null,
+          instructions: s.instructions ?? null,
+          sort_order: s.sortOrder ?? i,
+        })))
+        .select();
+
+      if (inserted) {
+        for (const sec of inserted) {
+          for (const q of questions ?? []) {
+            if (q.sectionTitle && q.sectionTitle === sec.title) {
+              q.sectionId = sec.id;
+            }
+          }
+        }
+      }
+    }
+
+    // Insert question bank links
+    if (questions?.length) {
+      await this.supabaseService.client
+        .from(TABLES.TEST_QUESTION_BANK)
+        .insert(questions.map((q, i) => ({
+          test_id: testId,
+          question_bank_id: q.questionBankId,
+          marks: q.marks ?? 1,
+          negative_mark: q.negativeMark ?? 0,
+          sort_order: q.sortOrder ?? i,
+          section_id: q.sectionId ?? null,
+          is_compulsory: q.isCompulsory ?? false,
+        })));
+    }
+
+    // Insert batch assignments
+    if (batches?.length) {
+      await this.supabaseService.client
+        .from(TABLES.TEST_BATCHES)
+        .insert(batches.map((b) => ({
+          test_id: testId,
+          batch_id: b.batchId,
+        })));
+    }
+
+    return this.findOne(testId);
   }
 
-  submitAttempt(id: string, dto: SubmitAttemptDto) {
-    return { testId: id, ...dto };
+  async findAll(options?: { status?: string; batchId?: string; page?: number; limit?: number }) {
+    let query = this.supabaseService.client
+      .from(TABLES.TESTS)
+      .select(TEST_SELECT, { count: 'exact' })
+      .order('created_at', { ascending: false });
+
+    if (options?.status) query = query.eq('status', options.status);
+    if (options?.batchId) query = query.eq('test_batches.batch_id', options.batchId);
+
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 50;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+
+    return { items: data ?? [], total: count ?? 0, page, limit };
+  }
+
+  async findOne(id: string) {
+    const { data, error } = await this.supabaseService.client
+      .from(TABLES.TESTS)
+      .select(TEST_SELECT)
+      .eq('id', id)
+      .single();
+
+    if (error || !data) throw new NotFoundException('Test not found');
+    return data;
+  }
+
+  async update(id: string, dto: UpdateTestDto) {
+    const existing = await this.findOne(id);
+    if (!existing) throw new NotFoundException('Test not found');
+
+    const { sections, questions, batches, ...testData } = dto;
+
+    if (Object.keys(testData).length > 0) {
+      const updates: Record<string, any> = {};
+      if (testData.title !== undefined) updates.title = testData.title;
+      if (testData.description !== undefined) updates.description = testData.description;
+      if (testData.durationMinutes !== undefined) updates.duration_minutes = testData.durationMinutes;
+      if (testData.totalMarks !== undefined) updates.total_marks = testData.totalMarks;
+      if (testData.passingMarks !== undefined) updates.passing_marks = testData.passingMarks;
+      if (testData.shuffleQuestions !== undefined) updates.shuffle_questions = testData.shuffleQuestions;
+      if (testData.shuffleOptions !== undefined) updates.shuffle_options = testData.shuffleOptions;
+      if (testData.showResultImmediately !== undefined) updates.show_result_immediately = testData.showResultImmediately;
+      if (testData.negativeMarking !== undefined) updates.negative_marking = testData.negativeMarking;
+      if (testData.negativePerQuestion !== undefined) updates.negative_per_question = testData.negativePerQuestion;
+      if (testData.maxAttempts !== undefined) updates.max_attempts = testData.maxAttempts;
+      if (testData.instructions !== undefined) updates.instructions = testData.instructions;
+      if (testData.startTime !== undefined) updates.start_time = testData.startTime;
+      if (testData.endTime !== undefined) updates.end_time = testData.endTime;
+      updates.updated_at = new Date().toISOString();
+
+      const { error } = await this.supabaseService.client
+        .from(TABLES.TESTS)
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+    }
+
+    // Re-insert relations if provided
+    if (sections || questions || batches) {
+      await this.supabaseService.client.from(TABLES.TEST_SECTIONS).delete().eq('test_id', id);
+      await this.supabaseService.client.from(TABLES.TEST_QUESTION_BANK).delete().eq('test_id', id);
+      await this.supabaseService.client.from(TABLES.TEST_BATCHES).delete().eq('test_id', id);
+      return this.insertRelations(id, sections, questions, batches);
+    }
+
+    return this.findOne(id);
+  }
+
+  async updateStatus(id: string, status: string) {
+    const valid = ['draft', 'published', 'scheduled', 'active', 'closed', 'archived'];
+    if (!valid.includes(status)) throw new ConflictException('Invalid status');
+
+    const { error } = await this.supabaseService.client
+      .from(TABLES.TESTS)
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+    return this.findOne(id);
+  }
+
+  async archive(id: string) {
+    return this.updateStatus(id, 'archived');
+  }
+
+  async remove(id: string) {
+    const { error } = await this.supabaseService.client
+      .from(TABLES.TESTS)
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return { deleted: true };
   }
 }

@@ -9,27 +9,25 @@ interface RecordingsPageClientProps {
   initialVideos: AdminVideo[];
   total: number;
   topics: Topic[];
-  token?: string;
 }
 
 export function RecordingsPageClient({
   initialVideos,
   total,
   topics,
-  token,
 }: RecordingsPageClientProps) {
   const [videos, setVideos] = useState<AdminVideo[]>(initialVideos);
   const [videoCount, setVideoCount] = useState(total);
 
   const refreshVideos = useCallback(async () => {
     try {
-      const result = await getAdminVideos({ page: 1, limit: 50 }, token);
+      const result = await getAdminVideos({ page: 1, limit: 50 });
       setVideos(result.items);
       setVideoCount(result.total);
     } catch {
       // stay with last-known state
     }
-  }, [token]);
+  }, []);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -40,14 +38,13 @@ export function RecordingsPageClient({
             Manage auto-imported Zoom recordings and manually uploaded videos.
           </p>
         </div>
-        <ManualUploadButton onUploadComplete={refreshVideos} token={token} />
+        <ManualUploadButton onUploadComplete={refreshVideos} />
       </div>
 
       <RecordingsTable
         initialVideos={videos}
         total={videoCount}
         topics={topics}
-        token={token}
       />
     </div>
   );

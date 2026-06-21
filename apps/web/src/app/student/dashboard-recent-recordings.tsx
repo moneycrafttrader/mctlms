@@ -6,7 +6,6 @@ import { type StudentVideo } from '@/lib/api/videos';
 
 interface Props {
   recordings: StudentVideo[];
-  token?: string;
 }
 
 function formatDate(iso: string) {

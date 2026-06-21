@@ -19,7 +19,6 @@ interface UploadRecordingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: () => void;
-  token?: string;
 }
 
 type UploadPhase =
@@ -41,7 +40,6 @@ export function UploadRecordingModal({
   isOpen,
   onClose,
   onComplete,
-  token,
 }: UploadRecordingModalProps) {
   const router = useRouter();
   const xhrRef = useRef<XMLHttpRequest | null>(null);
@@ -58,14 +56,14 @@ export function UploadRecordingModal({
   const fetchBatches = useCallback(async () => {
     setLoadingBatches(true);
     try {
-      const result = await getAllBatches({ isActive: true, limit: 200 }, token);
+      const result = await getAllBatches({ isActive: true, limit: 200 });
       setBatches(result.items);
     } catch {
       // silent
     } finally {
       setLoadingBatches(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -112,7 +110,6 @@ export function UploadRecordingModal({
           description: description.trim() || undefined,
           batchIds: Array.from(selectedBatchIds),
         },
-        token,
       );
 
       setPhase({ phase: 'uploading', progress: 0 });

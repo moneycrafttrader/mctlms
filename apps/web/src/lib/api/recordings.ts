@@ -28,15 +28,13 @@ export interface CreateRecordingWithUploadResponse {
 
 export async function createRecording(
   data: CreateRecordingData,
-  token?: string,
 ) {
   return fetchApi<CreateRecordingWithUploadResponse>(API_ROUTES.ADMIN_RECORDINGS, {
     method: 'POST',
     body: JSON.stringify(data),
-    token,
   });
 }
 
-export async function getRecordings(token?: string) {
-  return fetchApi<Recording[]>(API_ROUTES.ADMIN_RECORDINGS, { token });
+export async function getRecordings() {
+  return fetchApi<Recording[]>(API_ROUTES.ADMIN_RECORDINGS);
 }

@@ -11,7 +11,6 @@ interface ManualUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete: () => void;
-  token?: string;
 }
 
 type UploadState =
@@ -21,7 +20,7 @@ type UploadState =
   | { phase: 'success' }
   | { phase: 'error'; message: string };
 
-export function ManualUploadModal({ isOpen, onClose, onComplete, token }: ManualUploadModalProps) {
+export function ManualUploadModal({ isOpen, onClose, onComplete }: ManualUploadModalProps) {
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<UploadState>({ phase: 'idle' });
@@ -50,7 +49,7 @@ export function ManualUploadModal({ isOpen, onClose, onComplete, token }: Manual
     setState({ phase: 'requesting' });
 
     try {
-      const { uploadUrl } = await getMuxUploadUrl(title.trim(), token);
+      const { uploadUrl } = await getMuxUploadUrl(title.trim());
 
       setState({ phase: 'uploading', progress: 0 });
 

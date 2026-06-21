@@ -7,14 +7,12 @@ interface CreatePlanFormProps {
   students: { id: string; name: string; email: string }[];
   courses: { id: string; name: string }[];
   onSuccess: () => void;
-  token?: string;
 }
 
 export function CreatePlanForm({
   students,
   courses,
   onSuccess,
-  token,
 }: CreatePlanFormProps) {
   const [studentId, setStudentId] = useState('');
   const [courseId, setCourseId] = useState('');
@@ -38,7 +36,6 @@ export function CreatePlanForm({
           numberOfInstallments: parseInt(numberOfInstallments, 10),
           startDate: startDate || undefined,
         },
-        token,
       );
       setStudentId('');
       setCourseId('');

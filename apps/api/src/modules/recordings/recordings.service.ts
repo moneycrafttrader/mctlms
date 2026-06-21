@@ -5,9 +5,14 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
+import { RedisService } from '@liaoliaots/nestjs-redis';
+import Redis from 'ioredis';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { MuxService } from '../mux/mux.service';
+import { PlaybackGuardService } from '../playback/playback-guard.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
 import { CreateRecordingDto } from './dto/create-recording.dto';
 import { CreateTopicDto } from '../videos/dto/create-topic.dto';
 import { RequestUploadDto } from '../videos/dto/request-upload.dto';
@@ -17,11 +22,16 @@ import { UpdateVideoProgressDto } from '../videos/dto/update-video-progress.dto'
 @Injectable()
 export class RecordingsService {
   private readonly logger = new Logger(RecordingsService.name);
+  private readonly redis: Redis;
 
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly muxService: MuxService,
-  ) {}
+    private readonly playbackGuard: PlaybackGuardService,
+    redisService: RedisService,
+  ) {
+    this.redis = redisService.getOrThrow();
+  }
 
   // ── Topics ────────────────────────────────────────────────
 
@@ -400,20 +410,15 @@ export class RecordingsService {
 
   // ── Playback ──────────────────────────────────────────────
 
-  async getPlaybackUrl(recordingId: string, userId: string) {
-    const { data: recording, error } = await this.supabaseService.client
+  private async validateAccess(recordingId: string, userId: string): Promise<void> {
+    const { data: recording } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
-      .select('*')
+      .select('status')
       .eq('id', recordingId)
       .single();
 
-    if (error || !recording) {
-      throw new NotFoundException('Recording not found');
-    }
-
-    if (recording.status !== 'ready') {
-      throw new BadRequestException('Recording is not ready for playback yet');
-    }
+    if (!recording) throw new NotFoundException('Recording not found');
+    if (recording.status !== 'ready') throw new BadRequestException('Recording is not ready for playback yet');
 
     const { data: userBatches } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
@@ -421,7 +426,6 @@ export class RecordingsService {
       .eq('user_id', userId);
 
     const userBatchIds = (userBatches ?? []).map((b: any) => b.batch_id);
-
     if (userBatchIds.length > 0) {
       const { data: accessRecords } = await this.supabaseService.client
         .from(TABLES.RECORDING_BATCHES)
@@ -433,21 +437,34 @@ export class RecordingsService {
         throw new ForbiddenException('You do not have access to this recording');
       }
     }
+  }
 
-    const [url, thumbnail] = await Promise.all([
-      this.muxService.getSignedPlaybackUrl(recording.mux_playback_id, userId),
-      this.muxService.getSignedThumbnailUrl(recording.mux_playback_id),
-    ]);
+  async authorizePlayback(recordingId: string, userId: string, deviceId?: string, ip?: string) {
+    await this.validateAccess(recordingId, userId);
+    return this.playbackGuard.authorize(userId, recordingId, deviceId, ip);
+  }
 
-    await this.supabaseService.client
-      .from(TABLES.VIDEO_VIEWS)
-      .insert({
-        video_id: recordingId,
-        user_id: userId,
-        viewed_at: new Date().toISOString(),
-      });
+  async getPlaybackUrl(recordingId: string, userId: string, token: string, deviceId?: string, ip?: string) {
+    await this.validateAccess(recordingId, userId);
 
-    return { url, thumbnail };
+    const { data: recording } = await this.supabaseService.client
+      .from(TABLES.RECORDINGS)
+      .select('mux_playback_id')
+      .eq('id', recordingId)
+      .single();
+
+    if (!recording?.mux_playback_id) {
+      throw new BadRequestException('Recording has no playback ID configured');
+    }
+
+    return this.playbackGuard.getSignedUrl(
+      token,
+      recording.mux_playback_id,
+      userId,
+      recordingId,
+      deviceId,
+      ip,
+    );
   }
 
   // ── Progress ──────────────────────────────────────────────
@@ -496,7 +513,7 @@ export class RecordingsService {
 
     const { data: recordings } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
-      .select('id, title, description, mux_playback_id, duration_seconds, status, created_at, sort_order')
+      .select('id, title, description, duration_seconds, status, created_at, sort_order')
       .in('id', recordingIds)
       .eq('status', 'ready')
       .order('sort_order', { ascending: true });
@@ -505,7 +522,6 @@ export class RecordingsService {
       id: v.id,
       title: v.title,
       description: v.description,
-      muxPlaybackId: v.mux_playback_id,
       duration: v.duration_seconds,
       status: v.status,
       createdAt: v.created_at,

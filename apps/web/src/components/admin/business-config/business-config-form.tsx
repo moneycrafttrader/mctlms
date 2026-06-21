@@ -9,21 +9,20 @@ import {
 } from '@/lib/api/business-config';
 
 interface BusinessConfigFormProps {
-  token?: string;
 }
 
-export function BusinessConfigForm({ token }: BusinessConfigFormProps) {
+export function BusinessConfigForm({}: BusinessConfigFormProps) {
   const [config, setConfig] = useState<BusinessConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    getBusinessConfig(token)
+    getBusinessConfig()
       .then(setConfig)
       .catch(() => setMessage({ type: 'error', text: 'Failed to load config. Run seed.sql first.' }))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const handleChange = (field: string, value: string) => {
     if (!config) return;
@@ -56,7 +55,6 @@ export function BusinessConfigForm({ token }: BusinessConfigFormProps) {
           receipt_prefix: config.receipt_prefix,
           current_financial_year: config.current_financial_year,
         },
-        token,
       );
       setConfig(updated);
       setMessage({ type: 'success', text: 'Business configuration saved.' });

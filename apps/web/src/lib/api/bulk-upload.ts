@@ -37,15 +37,15 @@ export interface BulkUploadJob {
 /**
  * Fetch the 50 most recent bulk upload jobs.
  */
-export async function getBulkUploadJobs(token?: string) {
-  return fetchApi<BulkUploadJob[]>(`${API_ROUTES.BULK_UPLOAD}/jobs`, { token });
+export async function getBulkUploadJobs() {
+  return fetchApi<BulkUploadJob[]>(`${API_ROUTES.BULK_UPLOAD}/jobs`);
 }
 
 /**
  * Poll a single job's status after upload has been started.
  */
-export async function getJobStatus(jobId: string, token?: string) {
-  return fetchApi<JobStatus>(`${API_ROUTES.BULK_UPLOAD}/jobs/${jobId}`, { token });
+export async function getJobStatus(jobId: string) {
+  return fetchApi<JobStatus>(`${API_ROUTES.BULK_UPLOAD}/jobs/${jobId}`);
 }
 
 /**
@@ -64,6 +64,5 @@ export async function uploadStudentsCsv(
   }  >(`${API_ROUTES.BULK_UPLOAD}/students`, {
     method: 'POST',
     body: formData,
-    token,
   });
 }

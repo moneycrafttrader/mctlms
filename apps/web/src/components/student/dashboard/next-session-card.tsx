@@ -2,11 +2,10 @@
 
 import { useState } from 'react';
 import { Video, Calendar, Clock, ExternalLink, Loader2 } from 'lucide-react';
-import { type LiveSession, getSessionJoinUrl } from '@/lib/api/live-sessions';
+import { type LiveSession, getSessionJoinUrl, requestJoinToken } from '@/lib/api/live-sessions';
 
 interface NextSessionCardProps {
   sessions: LiveSession[];
-  token?: string;
 }
 
 function formatDate(iso: string) {
@@ -25,7 +24,7 @@ function formatTime(iso: string) {
   });
 }
 
-export function NextSessionCard({ sessions, token }: NextSessionCardProps) {
+export function NextSessionCard({ sessions }: NextSessionCardProps) {
   const [joining, setJoining] = useState(false);
 
   // Filter scheduled/live, sorted by start_time ascending
@@ -59,8 +58,9 @@ export function NextSessionCard({ sessions, token }: NextSessionCardProps) {
   const handleJoin = async () => {
     setJoining(true);
     try {
-      const url = await getSessionJoinUrl(nextSession.id, token);
-      window.open(url, '_blank');
+      const { token } = await requestJoinToken(nextSession.id);
+      const { joinUrl } = await getSessionJoinUrl(nextSession.id, token);
+      window.open(joinUrl, '_blank');
     } catch {
       // join URL failed — silent
     } finally {

@@ -30,6 +30,9 @@ import { LoginDto } from './dto/login.dto';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
 import { TABLES } from '../../common/constants/tables.constant';
+import { DeviceService } from '../devices/device.service';
+import { EmailService } from '../email/email.service';
+import { PlaybackGuardService } from '../playback/playback-guard.service';
 
 /** Maximum failed login attempts before rate-lock kicks in */
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -42,6 +45,9 @@ export class AuthService {
     private readonly supabaseService: SupabaseService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly deviceService: DeviceService,
+    private readonly emailService: EmailService,
+    private readonly playbackGuard: PlaybackGuardService,
     redisService: RedisService,
   ) {
     this.redis = redisService.getOrThrow();
@@ -108,7 +114,7 @@ export class AuthService {
     const { data: profile, error: profileError } = await this.supabaseService
       .client
       .from(TABLES.PROFILES)
-      .select('id, name, role, is_active, must_change_password')
+      .select('id, name, email, role, is_active, must_change_password')
       .eq('id', userId)
       .single();
 
@@ -168,12 +174,52 @@ export class AuthService {
     // ── Step 9: Clear rate-limit on success ───────────────────
     await this.redis.del(rateLimitKey);
 
-    // ── Step 10: Return token + user info ─────────────────────
+    // ── Step 10: Device registration (fire-and-forget-ish) ────
+    // Register the device fingerprint and detect suspicious logins.
+    // Email alerts are sent fire-and-forget — never block login response.
+    if (dto.device) {
+      const { device, isNew } = await this.deviceService.registerDevice(
+        userId,
+        ip,
+        userAgent,
+        dto.device,
+      );
+
+      if (isNew && device) {
+        this.logger.log(`New device detected for user ${userId}: ${dto.device.browser} on ${dto.device.os}`);
+
+        await this.supabaseService.client
+          .from(TABLES.LOGIN_ALERTS)
+          .insert({
+            user_id: userId,
+            device_id: device.id,
+            alert_type: 'new_device',
+            ip_address: ip,
+            user_agent: userAgent,
+            details: { browser: dto.device.browser, os: dto.device.os },
+            is_suspicious: true,
+          });
+
+        if (!device.is_trusted) {
+          this.emailService.sendLoginAlert(
+            profile.email,
+            profile.name,
+            dto.device.browser ?? 'Unknown browser',
+            dto.device.os ?? 'Unknown OS',
+            ip,
+            this.configService.get<string>('FRONTEND_URL', 'https://mctlms-web.vercel.app'),
+          ).catch((err) => this.logger.warn(`Login alert email failed: ${err.message}`));
+        }
+      }
+    }
+
+    // ── Step 11: Return token + user info ─────────────────────
     return {
       token,
       user: {
         id: profile.id,
         name: profile.name,
+        email: profile.email,
         role: profile.role,
         mustChangePassword: profile.must_change_password ?? false,
       },
@@ -196,6 +242,7 @@ export class AuthService {
     await Promise.all([
       this.redis.del(REDIS_KEYS.session(sessionId)),
       this.redis.del(REDIS_KEYS.userSession(userId)),
+      this.playbackGuard.revokeUserTokens(userId),
     ]);
 
     this.logger.log(`User ${userId} logged out (session ${sessionId})`);

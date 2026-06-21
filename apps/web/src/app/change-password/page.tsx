@@ -41,11 +41,9 @@ export default function ChangePasswordPage() {
     setLoading(true);
 
     try {
-      const token = getToken();
       await fetchApi(API_ROUTES.AUTH.CHANGE_PASSWORD, {
         method: 'POST',
         body: JSON.stringify({ newPassword, confirmPassword }),
-        token: token ?? undefined,
       });
 
       clearMustChangePassword();

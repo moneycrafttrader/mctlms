@@ -1,0 +1,401 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  BarChart3, Clock, CheckCircle, XCircle, HelpCircle, ArrowLeft,
+  ChevronDown, ChevronUp, FileText, Award, Target,
+} from 'lucide-react';
+import { getStudentResult } from '@/lib/api/assessments';
+import { PageHeader } from '@/components/shared/PageHeader';
+import { cn } from '@/lib/utils';
+
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+interface ReviewQuestion {
+  id: string;
+  question_text: string;
+  question_type: string;
+  options: Record<string, any> | null;
+  correct_answer: string | null;
+  student_answer: any;
+  marks_awarded: number;
+  marks: number;
+  is_correct: boolean;
+  teacher_feedback?: string | null;
+  image_url?: string | null;
+}
+
+interface TopicBreakdown {
+  topicName: string;
+  total: number;
+  correct: number;
+  accuracy: number;
+}
+
+interface ResultData {
+  id: string;
+  testTitle: string;
+  score: number;
+  totalMarks: number;
+  passingMarks: number;
+  percentage: number;
+  passed: boolean;
+  rank: number;
+  accuracy: number;
+  totalQuestions: number;
+  correctAnswers: number;
+  incorrectAnswers: number;
+  unansweredCount: number;
+  timeTakenSeconds: number;
+  submittedAt: string;
+  questions: ReviewQuestion[];
+  topicBreakdown: TopicBreakdown[];
+  teacherFeedback?: string | null;
+}
+
+function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string; color: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-card border border-surface-border bg-surface-card p-3">
+      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', color)}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-text-muted">{label}</p>
+        <p className="text-sm font-semibold text-text-primary">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+export default function TestResultPage() {
+  const params = useParams();
+  const router = useRouter();
+  const attemptId = params.attemptId as string;
+
+  const [result, setResult] = useState<ResultData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
+  const [showAllTopics, setShowAllTopics] = useState(false);
+
+  useEffect(() => {
+    async function fetch() {
+      try {
+        const raw: any = await getStudentResult(attemptId);
+        // Normalize API response
+        const r: ResultData = {
+          id: raw.id,
+          testTitle: raw.testTitle ?? raw.test?.title ?? raw.title ?? 'Test',
+          score: raw.score ?? raw.marksAwarded ?? 0,
+          totalMarks: raw.totalMarks ?? raw.total_marks ?? 0,
+          passingMarks: raw.passingMarks ?? raw.passing_marks ?? 0,
+          percentage: raw.percentage ?? (raw.totalMarks > 0 ? Math.round(((raw.score ?? raw.marksAwarded ?? 0) / raw.totalMarks) * 100) : 0),
+          passed: raw.passed ?? raw.isPassed ?? raw.status === 'passed',
+          rank: raw.rank ?? 0,
+          accuracy: raw.accuracy ?? (raw.totalQuestions > 0 ? Math.round((raw.correctAnswers / raw.totalQuestions) * 100) : 0),
+          totalQuestions: raw.totalQuestions ?? raw.total_questions ?? 0,
+          correctAnswers: raw.correctAnswers ?? raw.correct_answers ?? 0,
+          incorrectAnswers: raw.incorrectAnswers ?? raw.incorrect_answers ?? 0,
+          unansweredCount: raw.unansweredCount ?? raw.unanswered_count ?? 0,
+          timeTakenSeconds: raw.timeTakenSeconds ?? raw.time_taken_seconds ?? 0,
+          submittedAt: raw.submittedAt ?? raw.submitted_at ?? raw.created_at ?? new Date().toISOString(),
+          questions: Array.isArray(raw.questions ?? raw.questionReview ?? [])
+            ? (raw.questions ?? raw.questionReview ?? []).map((q: any) => ({
+                id: q.id,
+                question_text: q.question_text,
+                question_type: q.question_type,
+                options: q.options,
+                correct_answer: q.correct_answer,
+                student_answer: q.student_answer,
+                marks_awarded: q.marks_awarded ?? q.marksAwarded ?? 0,
+                marks: q.marks ?? q.totalMarks ?? 0,
+                is_correct: q.is_correct ?? q.isCorrect ?? false,
+                teacher_feedback: q.teacher_feedback ?? q.teacherFeedback ?? null,
+                image_url: q.image_url,
+              }))
+            : [],
+          topicBreakdown: Array.isArray(raw.topicBreakdown ?? raw.topic_breakdown ?? [])
+            ? (raw.topicBreakdown ?? raw.topic_breakdown ?? []).map((t: any) => ({
+                topicName: t.topicName ?? t.topic_name ?? t.name ?? 'Unknown',
+                total: t.total ?? 0,
+                correct: t.correct ?? 0,
+                accuracy: t.accuracy ?? (t.total > 0 ? Math.round((t.correct / t.total) * 100) : 0),
+              }))
+            : [],
+          teacherFeedback: raw.teacherFeedback ?? raw.teacher_feedback ?? null,
+        };
+        setResult(r);
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetch();
+  }, [attemptId]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-page">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-navy border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!result) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-surface-page px-4 text-center">
+        <BarChart3 className="h-10 w-10 text-text-muted" />
+        <p className="text-sm font-medium text-text-primary">Result not found</p>
+        <button
+          onClick={() => router.push('/student/tests')}
+          className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navyDark"
+        >
+          Back to Tests
+        </button>
+      </div>
+    );
+  }
+
+  const displayTopics = showAllTopics ? result.topicBreakdown : result.topicBreakdown.slice(0, 5);
+
+  return (
+    <div>
+      <PageHeader
+        title="Test Result"
+        showBack
+        action={
+          <button
+            onClick={() => router.push('/student/tests')}
+            className="rounded-lg bg-brand-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-navyDark"
+          >
+            Back to Tests
+          </button>
+        }
+      />
+      <div className="space-y-4 px-4 md:px-0">
+        {/* Score Header */}
+        <div className="rounded-card border border-surface-border bg-surface-card p-6 text-center">
+          <div className="mb-2 text-4xl font-bold text-text-primary">
+            {result.percentage}%
+          </div>
+          <div className="mb-3 text-sm text-text-secondary">
+            {result.score} / {result.totalMarks} marks
+          </div>
+          <div className="flex items-center justify-center gap-3">
+            <span className={cn(
+              'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold',
+              result.passed
+                ? 'bg-status-success/10 text-status-success'
+                : 'bg-status-live/10 text-status-live',
+            )}>
+              {result.passed ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+              {result.passed ? 'Passed' : 'Failed'}
+            </span>
+            {result.rank > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand-navy/10 px-3 py-1 text-xs font-semibold text-brand-navy">
+                <Award className="h-3.5 w-3.5" />
+                Rank #{result.rank}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+          <StatCard icon={Target} label="Accuracy" value={`${result.accuracy}%`} color="bg-brand-navy/10 text-brand-navy" />
+          <StatCard icon={HelpCircle} label="Total Questions" value={String(result.totalQuestions)} color="bg-surface-muted text-text-secondary" />
+          <StatCard icon={CheckCircle} label="Correct" value={String(result.correctAnswers)} color="bg-status-success/10 text-status-success" />
+          <StatCard icon={XCircle} label="Incorrect" value={String(result.incorrectAnswers)} color="bg-status-live/10 text-status-live" />
+          <StatCard icon={HelpCircle} label="Unanswered" value={String(result.unansweredCount)} color="bg-surface-muted text-text-muted" />
+          <StatCard icon={Clock} label="Time Taken" value={formatTime(result.timeTakenSeconds)} color="bg-surface-muted text-text-secondary" />
+        </div>
+
+        {/* Topic Analysis */}
+        {result.topicBreakdown.length > 0 && (
+          <div className="rounded-card border border-surface-border bg-surface-card p-4">
+            <h3 className="mb-3 text-sm font-semibold text-text-primary">Topic Analysis</h3>
+            <div className="space-y-2">
+              {displayTopics.map((topic) => (
+                <div key={topic.topicName}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="text-text-secondary">{topic.topicName}</span>
+                    <span className="font-medium text-text-primary">
+                      {topic.correct}/{topic.total} ({topic.accuracy}%)
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all',
+                        topic.accuracy >= 80 ? 'bg-status-success' : topic.accuracy >= 40 ? 'bg-status-scheduled' : 'bg-status-live',
+                      )}
+                      style={{ width: `${topic.accuracy}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {result.topicBreakdown.length > 5 && (
+              <button
+                onClick={() => setShowAllTopics(!showAllTopics)}
+                className="mt-3 flex w-full items-center justify-center gap-1 text-xs font-medium text-brand-navy"
+              >
+                {showAllTopics ? 'Show Less' : `Show All (${result.topicBreakdown.length})`}
+                {showAllTopics ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Question Review */}
+        {result.questions.length > 0 && (
+          <div className="rounded-card border border-surface-border bg-surface-card p-4">
+            <h3 className="mb-3 text-sm font-semibold text-text-primary">Question Review</h3>
+            <div className="space-y-2">
+              {result.questions.map((q, idx) => {
+                const isExpanded = expandedQuestion === q.id;
+                const options = q.options?.options ?? q.options?.choices ?? q.options ?? {};
+                const optArr = Array.isArray(options) ? options : Object.entries(options).map(([k, v]) => ({ key: k, value: v as string }));
+
+                const renderAnswer = (ans: any) => {
+                  if (ans == null) return '—';
+                  if (Array.isArray(ans)) return ans.join(', ');
+                  return String(ans);
+                };
+
+                return (
+                  <div key={q.id} className="rounded-lg border border-surface-border">
+                    <button
+                      onClick={() => setExpandedQuestion(isExpanded ? null : q.id)}
+                      className="flex w-full items-start gap-3 p-3 text-left"
+                    >
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-muted text-xs font-medium text-text-secondary">
+                        {idx + 1}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-text-primary line-clamp-2">{q.question_text}</p>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
+                          {q.is_correct ? (
+                            <span className="flex items-center gap-1 text-status-success">
+                              <CheckCircle className="h-3 w-3" /> Correct
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-status-live">
+                              <XCircle className="h-3 w-3" /> Incorrect
+                            </span>
+                          )}
+                          <span>·</span>
+                          <span>{q.marks_awarded}/{q.marks} marks</span>
+                        </div>
+                      </div>
+                      {isExpanded ? <ChevronUp className="h-4 w-4 shrink-0 text-text-muted" /> : <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" />}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t border-surface-border p-3 space-y-3">
+                        {q.image_url && (
+                          <div className="overflow-hidden rounded-lg border border-surface-border">
+                            <img src={q.image_url} alt="Question" className="max-h-60 w-full object-contain" />
+                          </div>
+                        )}
+
+                        {q.question_type !== 'short_answer' && q.question_type !== 'long_answer' && q.question_type !== 'numerical' && optArr.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-medium text-text-muted">Options:</p>
+                            {optArr.map((opt: any, oi: number) => {
+                              const optKey = opt.key ?? opt.id ?? String(oi);
+                              const optVal = opt.value ?? opt.label ?? opt;
+                              const isStudentAns = String(q.student_answer) === String(optKey) || (Array.isArray(q.student_answer) && q.student_answer.includes(optKey));
+                              const isCorrectAns = String(q.correct_answer) === String(optKey) || (Array.isArray(JSON.parse(q.correct_answer || '[]')) && JSON.parse(q.correct_answer || '[]').includes(optKey));
+
+                              let bgColor = 'bg-surface-muted';
+                              if (isCorrectAns) bgColor = 'bg-status-success/10 border-status-success';
+                              if (isStudentAns && !isCorrectAns) bgColor = 'bg-status-live/10 border-status-live';
+
+                              return (
+                                <div
+                                  key={optKey}
+                                  className={cn('flex items-center gap-2 rounded-lg border border-surface-border px-3 py-2 text-xs', bgColor)}
+                                >
+                                  {isCorrectAns && <CheckCircle className="h-3.5 w-3.5 shrink-0 text-status-success" />}
+                                  {isStudentAns && !isCorrectAns && <XCircle className="h-3.5 w-3.5 shrink-0 text-status-live" />}
+                                  <span className="text-text-primary">{optVal}</span>
+                                  {isCorrectAns && <span className="ml-auto text-[10px] font-medium text-status-success">Correct</span>}
+                                  {isStudentAns && !isCorrectAns && <span className="ml-auto text-[10px] font-medium text-status-live">Your answer</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <p className="text-text-muted">Your answer</p>
+                            <p className={cn('font-medium', q.is_correct ? 'text-status-success' : 'text-status-live')}>
+                              {renderAnswer(q.student_answer)}
+                            </p>
+                          </div>
+                          {q.correct_answer != null && !q.is_correct && (
+                            <div>
+                              <p className="text-text-muted">Correct answer</p>
+                              <p className="font-medium text-status-success">{renderAnswer(q.correct_answer)}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {q.teacher_feedback && (
+                          <div className="rounded-lg bg-brand-navy/5 p-3">
+                            <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-brand-navy">Teacher Feedback</p>
+                            <p className="text-xs text-text-secondary">{q.teacher_feedback}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Teacher Feedback */}
+        {result.teacherFeedback && (
+          <div className="rounded-card border border-surface-border bg-surface-card p-4">
+            <h3 className="mb-2 text-sm font-semibold text-text-primary">Teacher Feedback</h3>
+            <div className="rounded-lg bg-brand-navy/5 p-3">
+              <p className="text-sm text-text-secondary">{result.teacherFeedback}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="pb-6 text-center">
+          <button
+            onClick={() => router.push('/student/tests')}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-navy px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navyDark"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Tests
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

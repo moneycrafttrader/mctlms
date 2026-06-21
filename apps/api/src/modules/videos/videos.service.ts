@@ -21,9 +21,14 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
+import { RedisService } from '@liaoliaots/nestjs-redis';
+import Redis from 'ioredis';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { MuxService } from '../mux/mux.service';
+import { PlaybackGuardService } from '../playback/playback-guard.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { RequestUploadDto } from './dto/request-upload.dto';
@@ -33,11 +38,16 @@ import { UpdateVideoProgressDto } from './dto/update-video-progress.dto';
 @Injectable()
 export class VideosService {
   private readonly logger = new Logger(VideosService.name);
+  private readonly redis: Redis;
 
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly muxService: MuxService,
-  ) {}
+    private readonly playbackGuard: PlaybackGuardService,
+    redisService: RedisService,
+  ) {
+    this.redis = redisService.getOrThrow();
+  }
 
   // ──────────────────────────────────────────────────────────────
   //  createTopic
@@ -320,30 +330,22 @@ export class VideosService {
    *   5. Log the view in VIDEO_VIEWS
    *   6. Return { url, thumbnail }
    */
-  async getPlaybackUrl(videoId: string, userId: string) {
-    // Step 1: Fetch video
-    const { data: video, error: videoError } = await this.supabaseService.client
+  async authorizePlayback(videoId: string, userId: string, deviceId?: string, ip?: string) {
+    const { data: video } = await this.supabaseService.client
       .from(TABLES.VIDEOS)
-      .select('*')
+      .select('status')
       .eq('id', videoId)
       .single();
 
-    if (videoError || !video) {
-      throw new NotFoundException('Video not found');
-    }
+    if (!video) throw new NotFoundException('Video not found');
+    if (video.status !== 'ready') throw new BadRequestException('Video is not ready for playback yet');
 
-    if (video.status !== 'ready') {
-      throw new BadRequestException('Video is not ready for playback yet');
-    }
-
-    // Step 2: Verify user has batch access
     const { data: userBatches } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
       .select('batch_id')
       .eq('user_id', userId);
 
     const userBatchIds = (userBatches ?? []).map((b: any) => b.batch_id);
-
     if (userBatchIds.length > 0) {
       const { data: accessRecords } = await this.supabaseService.client
         .from(TABLES.VIDEO_BATCHES)
@@ -356,22 +358,28 @@ export class VideosService {
       }
     }
 
-    // Step 3: Generate signed URLs
-    const [url, thumbnail] = await Promise.all([
-      this.muxService.getSignedPlaybackUrl(video.mux_playback_id, userId),
-      this.muxService.getSignedThumbnailUrl(video.mux_playback_id),
-    ]);
+    return this.playbackGuard.authorize(userId, videoId, deviceId, ip);
+  }
 
-    // Step 4: Log the view
-    await this.supabaseService.client
-      .from(TABLES.VIDEO_VIEWS)
-      .insert({
-        video_id: videoId,
-        user_id: userId,
-        viewed_at: new Date().toISOString(),
-      });
+  async getPlaybackUrl(videoId: string, userId: string, token: string, deviceId?: string, ip?: string) {
+    const { data: video } = await this.supabaseService.client
+      .from(TABLES.VIDEOS)
+      .select('mux_playback_id, status')
+      .eq('id', videoId)
+      .single();
 
-    return { url, thumbnail };
+    if (!video) throw new NotFoundException('Video not found');
+    if (video.status !== 'ready') throw new BadRequestException('Video is not ready for playback yet');
+    if (!video.mux_playback_id) throw new BadRequestException('Video has no playback ID configured');
+
+    return this.playbackGuard.getSignedUrl(
+      token,
+      video.mux_playback_id,
+      userId,
+      videoId,
+      deviceId,
+      ip,
+    );
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -541,7 +549,7 @@ export class VideosService {
 
     const { data: videos } = await this.supabaseService.client
       .from(TABLES.VIDEOS)
-      .select('id, title, description, mux_playback_id, duration_seconds, status, created_at, sort_order')
+      .select('id, title, description, duration_seconds, status, created_at, sort_order')
       .in('id', videoIds)
       .eq('status', 'ready')
       .order('sort_order', { ascending: true });
@@ -550,7 +558,6 @@ export class VideosService {
       id: v.id,
       title: v.title,
       description: v.description,
-      muxPlaybackId: v.mux_playback_id,
       duration: v.duration_seconds,
       status: v.status,
       createdAt: v.created_at,

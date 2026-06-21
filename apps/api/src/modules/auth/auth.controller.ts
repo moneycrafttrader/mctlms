@@ -19,6 +19,7 @@ import {
   Req,
   Res,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -27,12 +28,17 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { SupabaseService } from '../../common/services/supabase.service';
+import { TABLES } from '../../common/constants/tables.constant';
 
 @Controller('auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly supabaseService: SupabaseService,
+  ) {}
 
   /**
    * POST /auth/login
@@ -75,6 +81,20 @@ export class AuthController {
   }
 
   /**
+   * GET /auth/validate-session
+   *
+   * Lightweight heartbeat endpoint — returns 200 if the JWT + Redis session are
+   * valid, 401 otherwise. Used by the frontend's 30s takeover-detection heartbeat
+   * and the 401-recovery logic in fetchApi.
+   *
+   * Not @Public() — JwtAuthGuard runs and validates the session.
+   */
+  @Get('validate-session')
+  validateSession() {
+    return { valid: true };
+  }
+
+  /**
    * GET /auth/me
    *
    * Returns the currently authenticated user's session info.
@@ -84,10 +104,25 @@ export class AuthController {
    * Requires a valid JWT (not @Public).
    */
   @Get('me')
-  getProfile(
+  async getProfile(
     @CurrentUser() user: { id: string; role: string; sessionId: string },
   ) {
-    return user;
+    const { data: profile } = await this.supabaseService.client
+      .from(TABLES.PROFILES)
+      .select('id, name, email, role, is_active')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile) {
+      throw new NotFoundException('User profile not found');
+    }
+
+    return {
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      role: profile.role,
+    };
   }
 
   /**

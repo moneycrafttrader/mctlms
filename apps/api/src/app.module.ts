@@ -37,7 +37,14 @@ import { BulkUploadModule } from './modules/bulk-upload/bulk-upload.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { BusinessConfigModule } from './modules/business-config/business-config.module';
+import { DeviceModule } from './modules/devices/device.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
+import { PlaybackModule } from './modules/playback/playback.module';
+import { ScreenRecordingModule } from './modules/screen-recording/screen-recording.module';
+import { QuestionsModule } from './modules/questions/questions.module';
+import { AttemptsModule } from './modules/attempts/attempts.module';
+import { EvaluationModule } from './modules/evaluation/evaluation.module';
+import { ResultsModule } from './modules/results/results.module';
 
 // ── Common providers ─────────────────────────────────────────
 import { SupabaseService } from './common/services/supabase.service';
@@ -104,7 +111,14 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     PaymentsModule,
     InvoicesModule,
     BusinessConfigModule,
+    DeviceModule,
     AnalyticsModule,
+    PlaybackModule,
+    ScreenRecordingModule,
+    QuestionsModule,
+    AttemptsModule,
+    EvaluationModule,
+    ResultsModule,
   ],
   exports: [
     SupabaseService,

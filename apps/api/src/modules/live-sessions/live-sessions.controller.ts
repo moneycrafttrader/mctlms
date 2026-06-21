@@ -22,7 +22,9 @@ import {
   Param,
   Body,
   Query,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { SessionStatus, UserRole } from '@lms/shared-types';
 import { LiveSessionsService } from './live-sessions.service';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -33,25 +35,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 export class LiveSessionsController {
   constructor(private readonly liveSessionsService: LiveSessionsService) {}
 
-  /**
-   * POST /live-sessions
-   *
-   * Create a new live session — creates a Zoom webinar and registers all students
-   * from the assigned batches.
-   * Only admins can create sessions.
-   */
   @Roles(UserRole.ADMIN)
   @Post()
   create(@Body() dto: CreateSessionDto) {
     return this.liveSessionsService.create(dto);
   }
 
-  /**
-   * GET /live-sessions
-   *
-   * List all sessions with optional filters (batchId, status) and pagination.
-   * Admins and teachers can view the full list.
-   */
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get()
   findAll(
@@ -68,22 +57,11 @@ export class LiveSessionsController {
     );
   }
 
-  /**
-   * GET /live-sessions/my
-   *
-   * Get all sessions for the currently logged-in student, split into upcoming and past.
-   * This is what the student dashboard calls.
-   */
   @Get('my')
   getMySessions(@CurrentUser() user: { id: string }) {
     return this.liveSessionsService.getForStudent(user.id);
   }
 
-  /**
-   * GET /live-sessions/:id
-   *
-   * Get details of a single session, including batch IDs and host teacher info.
-   */
   @Roles(UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT)
   @Get(':id')
   findById(@Param('id') id: string) {
@@ -91,25 +69,97 @@ export class LiveSessionsController {
   }
 
   /**
-   * GET /live-sessions/:id/join
+   * POST /live-sessions/:id/request-join
    *
-   * Get the currently logged-in student's personal Zoom join URL for a session.
-   * Each student has a unique URL tied to their email — this enables attendance tracking.
+   * Request a single-use join token. Validates the session is joinable,
+   * revokes previous tokens, and returns a fresh token.
    */
-  @Get(':id/join')
-  getJoinUrl(
+  @Post(':id/request-join')
+  async requestJoin(
     @Param('id') id: string,
     @CurrentUser() user: { id: string },
   ) {
-    return this.liveSessionsService.getStudentJoinUrl(id, user.id);
+    return this.liveSessionsService.requestJoinToken(id, user.id);
   }
 
   /**
-   * PATCH /live-sessions/:id/status
+   * GET /live-sessions/:id/join?token=xxx
    *
-   * Manually update the status of a session (scheduled, live, ended, cancelled).
-   * Only admins can change session status.
+   * Consume a single-use join token and return the Zoom join URL.
+   * Token is validated, consumed (single-use), and the attempt is logged.
    */
+  @Get(':id/join')
+  async getJoinUrl(
+    @Param('id') id: string,
+    @Query('token') token: string,
+    @CurrentUser() user: { id: string },
+    @Req() req: Request,
+  ) {
+    const ip = (req.ip || req.headers['x-forwarded-for'] || 'unknown') as string;
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    return this.liveSessionsService.getStudentJoinUrl(
+      id,
+      user.id,
+      token,
+      ip,
+      userAgent as string,
+    );
+  }
+
+  /**
+   * POST /live-sessions/:id/leave
+   *
+   * Mark the current user as having left the session.
+   * Clears the active join marker in Redis.
+   */
+  @Post(':id/leave')
+  async leaveSession(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    await this.liveSessionsService.leaveSession(id, user.id);
+    return { left: true };
+  }
+
+  /**
+   * GET /live-sessions/:id/join-audit
+   *
+   * View join attempt audit trail for a session. Includes IP, user agent,
+   * outcome, and user info. Admin only.
+   */
+  @Roles(UserRole.ADMIN)
+  @Get(':id/join-audit')
+  async getJoinAudit(@Param('id') id: string) {
+    return this.liveSessionsService.getJoinAudit(id);
+  }
+
+  /**
+   * GET /live-sessions/:id/active-joins
+   *
+   * View currently active join sessions (from Redis). Admin only.
+   * Used to detect link sharing (same user from multiple IPs).
+   */
+  @Roles(UserRole.ADMIN)
+  @Get(':id/active-joins')
+  async getActiveJoins(@Param('id') id: string) {
+    return this.liveSessionsService.getActiveJoins(id);
+  }
+
+  /**
+   * POST /live-sessions/:id/revoke-tokens
+   *
+   * Revoke ALL outstanding join tokens for a session. Admin only.
+   * Sets a revocation timestamp — all future token requests will be rejected
+   * until the admin re-enables them. Clears all active join markers.
+   */
+  @Roles(UserRole.ADMIN)
+  @Post(':id/revoke-tokens')
+  async revokeTokens(@Param('id') id: string) {
+    await this.liveSessionsService.revokeAllTokens(id);
+    return { revoked: true };
+  }
+
   @Roles(UserRole.ADMIN)
   @Patch(':id/status')
   updateStatus(

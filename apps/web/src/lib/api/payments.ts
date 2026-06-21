@@ -25,17 +25,10 @@ export interface PaymentInstallment {
   payment_id?: string;
 }
 
-/**
- * Fetch own payment plans with installments (student dashboard).
- * GET /payments/my
- */
-export async function getMyPaymentPlans(token?: string) {
-  return fetchApi<PaymentPlan[]>(`${API_ROUTES.PAYMENTS.MY}`, { token });
+export async function getMyPaymentPlans() {
+  return fetchApi<PaymentPlan[]>(`${API_ROUTES.PAYMENTS.MY}`);
 }
 
-/**
- * Create a new payment plan with EMI installments.
- */
 export async function createPaymentPlan(
   data: {
     studentId: string;
@@ -44,39 +37,28 @@ export async function createPaymentPlan(
     numberOfInstallments: number;
     startDate?: string;
   },
-  token?: string,
 ) {
   return fetchApi<PaymentPlan>(`${API_ROUTES.PAYMENTS.PLANS}`, {
     method: 'POST',
     body: JSON.stringify(data),
-    token,
   });
 }
 
-/**
- * Fetch all payment plans and installments for a student.
- */
-export async function getStudentPlans(studentId: string, token?: string) {
+export async function getStudentPlans(studentId: string) {
   return fetchApi<PaymentPlan[]>(
     `${API_ROUTES.PAYMENTS.PLANS}/student/${studentId}`,
-    { token },
   );
 }
 
-/**
- * Mark an installment as paid. Backend auto-generates receipt PDF + email.
- */
 export async function markInstallmentPaid(
   installmentId: string,
   data: { paymentMethod: string; transactionId?: string },
-  token?: string,
 ) {
   return fetchApi<any>(
     `${API_ROUTES.PAYMENTS.INSTALLMENTS}/${installmentId}/pay`,
     {
       method: 'PATCH',
       body: JSON.stringify(data),
-      token,
     },
   );
 }

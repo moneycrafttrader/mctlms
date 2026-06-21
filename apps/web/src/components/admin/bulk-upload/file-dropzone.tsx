@@ -11,10 +11,9 @@ const MAX_POLL_MS = 30000;
 
 interface FileDropzoneProps {
   onUploadSuccess: () => void;
-  token?: string;
 }
 
-export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
+export function FileDropzone({ onUploadSuccess }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -50,11 +49,11 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
         const formData = new FormData();
         formData.append('file', file);
 
-        const { jobId, totalRows } = await uploadStudentsCsv(formData, token);
+        const { jobId, totalRows } = await uploadStudentsCsv(formData);
 
         // Poll for job results
         const pollStart = Date.now();
-        let jobResult = await getJobStatus(jobId, token);
+        let jobResult = await getJobStatus(jobId);
 
         while (
           jobResult &&
@@ -62,7 +61,7 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
           Date.now() - pollStart < MAX_POLL_MS
         ) {
           await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-          jobResult = await getJobStatus(jobId, token);
+          jobResult = await getJobStatus(jobId);
         }
 
         if (!jobResult) {
@@ -89,7 +88,7 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
         onUploadSuccess();
       }
     },
-    [token, onUploadSuccess],
+    [onUploadSuccess],
   );
 
   const onDrop = useCallback(

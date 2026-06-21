@@ -5,10 +5,9 @@ import { createCourse } from '@/lib/api/courses';
 
 interface CourseFormProps {
   onSuccess: () => void;
-  token?: string;
 }
 
-export function CourseForm({ onSuccess, token }: CourseFormProps) {
+export function CourseForm({ onSuccess }: CourseFormProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
@@ -20,7 +19,7 @@ export function CourseForm({ onSuccess, token }: CourseFormProps) {
     setSubmitting(true);
 
     try {
-      await createCourse({ name, description: description || undefined }, token);
+      await createCourse({ name, description: description || undefined });
       setName('');
       setDescription('');
       onSuccess();

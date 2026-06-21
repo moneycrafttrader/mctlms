@@ -1,87 +1,175 @@
 export class ApiError extends Error {
-  status: number;
-  data: any;
-
-  constructor(message: string, status: number, data?: any) {
+  constructor(
+    message: string,
+    public status: number,
+    public data?: unknown,
+  ) {
     super(message);
     this.name = 'ApiError';
-    this.status = status;
-    this.data = data;
+  }
+}
+
+export class UnauthorizedError extends ApiError {
+  constructor(message: string, data?: unknown) {
+    super(message, 401, data);
+    this.name = 'UnauthorizedError';
+  }
+}
+
+export class ForbiddenError extends ApiError {
+  constructor(message: string, data?: unknown) {
+    super(message, 403, data);
+    this.name = 'ForbiddenError';
+  }
+}
+
+export class NotFoundError extends ApiError {
+  constructor(message: string, data?: unknown) {
+    super(message, 404, data);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ServerError extends ApiError {
+  constructor(message: string, status: number, data?: unknown) {
+    super(message, status, data);
+    this.name = 'ServerError';
   }
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const TIMEOUT_MS = 30_000;
+const isDev = process.env.NODE_ENV === 'development';
 
-export async function fetchApi<T = any>(
-  endpoint: string,
-  options?: RequestInit & { token?: string },
-): Promise<T> {
-  const url = `${API_URL}${endpoint}`;
-  let token = options?.token;
+const AUTH_ENDPOINTS = new Set(['/auth/login', '/auth/validate-session']);
 
-  // Token resolution strategy:
-  //   1. If the caller explicitly passed a token, use it.
-  //   2. On the SERVER (SSR), read the access_token cookie from the
-  //      incoming request via next/headers so that Server Components
-  //      can authenticate fetches to the NestJS backend.  This is
-  //      needed because the Vercel-domain cookie is never sent to
-  //      Render automatically.
-  //   3. On the CLIENT, fall back to parsing document.cookie (set by
-  //      the login page on the Vercel domain).
-  if (!token) {
-    if (typeof window === 'undefined') {
-      try {
-        const { cookies } = await import('next/headers');
-        const cookieStore = cookies();
-        token = cookieStore.get('access_token')?.value;
-      } catch {
-        // Not in a request context (build step, test runner, etc.)
-      }
-    } else {
-      const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]*)/);
-      token = match ? match[1] : undefined;
-    }
-  }
-
-  const isFormData = options?.body instanceof FormData;
-
-  const headers: Record<string, string> = {
-    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(options?.headers as Record<string, string>),
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const { token: _token, ...fetchOptions } = options ?? {};
-  const response = await fetch(url, {
-    ...fetchOptions,
-    headers,
-    credentials: 'include',
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    let errorData: any;
+async function getAccessToken(): Promise<string | undefined> {
+  if (typeof window === 'undefined') {
     try {
-      errorData = await response.json();
+      const { cookies } = await import('next/headers');
+      const cookieStore = cookies();
+      return cookieStore.get('access_token')?.value;
     } catch {
-      errorData = { message: response.statusText };
+      return undefined;
     }
+  }
+  const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]*)/);
+  return match ? match[1] : undefined;
+}
 
-    throw new ApiError(
-      errorData.message || `Request failed with status ${response.status}`,
-      response.status,
-      errorData,
-    );
+async function validateSession(): Promise<boolean> {
+  try {
+    const token = await getAccessToken();
+    const res = await fetch(`${API_URL}/auth/validate-session`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function createApiError(status: number, body: any): ApiError {
+  const message = body?.message || `Request failed with status ${status}`;
+  switch (status) {
+    case 401:
+      return new UnauthorizedError(message, body);
+    case 403:
+      return new ForbiddenError(message, body);
+    case 404:
+      return new NotFoundError(message, body);
+    default:
+      return status >= 500
+        ? new ServerError(message, status, body)
+        : new ApiError(message, status, body);
+  }
+}
+
+export async function fetchApi<T = unknown>(
+  endpoint: string,
+  options?: RequestInit,
+): Promise<T> {
+  const start = performance.now();
+  let attempt = 0;
+  const maxAttempts = 2;
+
+  while (attempt < maxAttempts) {
+    attempt++;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const url = `${API_URL}${endpoint}`;
+      const token = await getAccessToken();
+
+      const isFormData = options?.body instanceof FormData;
+      const headers: Record<string, string> = {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(options?.headers as Record<string, string>),
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (isDev) {
+        console.group(`[API] ${options?.method || 'GET'} ${endpoint}`);
+        console.log('Status:', response.status);
+        console.log('Duration:', `${(performance.now() - start).toFixed(0)}ms`);
+        console.groupEnd();
+      }
+
+      if (response.status === 401 && attempt === 1 && !AUTH_ENDPOINTS.has(endpoint)) {
+        const sessionValid = await validateSession();
+        if (sessionValid) {
+          continue;
+        }
+        if (typeof window !== 'undefined') {
+          document.cookie = 'access_token=; path=/; max-age=0; secure; samesite=lax';
+          window.location.href = '/login';
+        }
+        throw new UnauthorizedError('Session expired');
+      }
+
+      if (!response.ok) {
+        let body: any;
+        try {
+          body = await response.json();
+        } catch {
+          body = { message: response.statusText };
+        }
+        throw createApiError(response.status, body);
+      }
+
+      const data = await response.json();
+      if (
+        data &&
+        typeof data === 'object' &&
+        'success' in data &&
+        'data' in data
+      ) {
+        return data.data as T;
+      }
+      return data as T;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof ApiError) throw err;
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new ApiError(`Request timed out after ${TIMEOUT_MS / 1000}s`, 408);
+      }
+      throw new ApiError((err as Error).message || 'Network error', 0);
+    }
   }
 
-  const data = await response.json();
-
-  if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
-    return data.data as T;
-  }
-
-  return data as T;
+  throw new ApiError('Unexpected error', 0);
 }

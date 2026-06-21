@@ -10,7 +10,6 @@ interface EditVideoModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaved: (updated: AdminVideo) => void;
-  token?: string;
 }
 
 export function EditVideoModal({
@@ -19,7 +18,6 @@ export function EditVideoModal({
   isOpen,
   onClose,
   onSaved,
-  token,
 }: EditVideoModalProps) {
   const [title, setTitle] = useState(video.title);
   const [description, setDescription] = useState(video.description ?? '');
@@ -44,7 +42,6 @@ export function EditVideoModal({
           description: description.trim() || undefined,
           topicId: topicId || null,
         },
-        token,
       );
       onSaved(updated);
       onClose();

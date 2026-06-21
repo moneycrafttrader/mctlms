@@ -1,15 +1,41 @@
-import { Controller, Get, Post, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
 import { TestsService } from './tests.service';
 import { CreateTestDto } from './dto/create-test.dto';
-import { SubmitAttemptDto } from './dto/submit-attempt.dto';
+import { UpdateTestDto } from './dto/update-test.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('tests')
 export class TestsController {
   constructor(private readonly testsService: TestsService) {}
 
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Post()
+  create(@Body() dto: CreateTestDto, @CurrentUser() user: { id: string }) {
+    return this.testsService.create(dto, user.id);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Post(':id/duplicate')
+  duplicate(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.testsService.duplicate(id, user.id);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get()
-  findAll() {
-    return this.testsService.findAll();
+  findAll(
+    @Query('status') status?: string,
+    @Query('batchId') batchId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.testsService.findAll({
+      status,
+      batchId,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
   }
 
   @Get(':id')
@@ -17,13 +43,27 @@ export class TestsController {
     return this.testsService.findOne(id);
   }
 
-  @Post()
-  create(@Body() dto: CreateTestDto) {
-    return this.testsService.create(dto);
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateTestDto) {
+    return this.testsService.update(id, dto);
   }
 
-  @Post(':id/attempt')
-  submitAttempt(@Param('id') id: string, @Body() dto: SubmitAttemptDto) {
-    return this.testsService.submitAttempt(id, dto);
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Patch(':id/status')
+  updateStatus(@Param('id') id: string, @Body('status') status: string) {
+    return this.testsService.updateStatus(id, status);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Post(':id/archive')
+  archive(@Param('id') id: string) {
+    return this.testsService.archive(id);
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.testsService.remove(id);
   }
 }

@@ -6,9 +6,10 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { PlayCircle, Clock } from 'lucide-react';
 import { MuxVideoPlayer } from './mux-video-player';
+import { authorizePlayback, getPlaybackUrl } from '@/lib/api/playback';
 import type { BatchVideo } from '@/lib/api/videos';
 
 interface VideoTheaterProps {
@@ -25,12 +26,43 @@ export function VideoTheater({ videos }: VideoTheaterProps) {
   const [activeVideo, setActiveVideo] = useState<BatchVideo | null>(
     videos.length > 0 ? videos[0] : null,
   );
+  const [playback, setPlayback] = useState<{ url: string; thumbnail: string } | null>(null);
+  const [loadingUrl, setLoadingUrl] = useState(false);
+  const tokenRef = useRef<{ [id: string]: string }>({});
+
+  useEffect(() => {
+    if (!activeVideo) return;
+    let cancelled = false;
+    setLoadingUrl(true);
+    (async () => {
+      try {
+        let token = tokenRef.current[activeVideo.id];
+        if (!token) {
+          const auth = await authorizePlayback(activeVideo.id);
+          token = auth.playbackToken;
+          tokenRef.current[activeVideo.id] = token;
+        }
+        const result = await getPlaybackUrl(activeVideo.id, token);
+        if (!cancelled) {
+          setPlayback({ url: result.url, thumbnail: result.thumbnail });
+          setLoadingUrl(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setPlayback(null);
+          setLoadingUrl(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeVideo?.id]);
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
         <MuxVideoPlayer
-          playbackId={activeVideo?.muxPlaybackId}
+          playbackUrl={playback?.url}
+          thumbnail={playback?.thumbnail}
           title={activeVideo?.title}
         />
         {activeVideo && (

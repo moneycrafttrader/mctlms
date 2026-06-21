@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { fetchApi, ApiError } from '@/lib/api-client';
 import { ROUTES, API_ROUTES } from '@/lib/constants';
 import { setMustChangePassword } from '@/lib/auth';
+import { useDeviceFingerprint } from '@/lib/hooks/useDeviceFingerprint';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const fingerprint = useDeviceFingerprint();
 
   // Forgot password state
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -25,9 +27,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      const body: Record<string, unknown> = { email, password };
+      if (fingerprint) {
+        body.device = fingerprint;
+      }
       const result: any = await fetchApi(API_ROUTES.AUTH.LOGIN, {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       });
 
       const { token, user } = result;

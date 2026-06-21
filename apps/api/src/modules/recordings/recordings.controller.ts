@@ -7,7 +7,9 @@ import {
   Param,
   Body,
   Query,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { UserRole } from '@lms/shared-types';
 import { RecordingsService } from './recordings.service';
 import { CreateRecordingDto } from './dto/create-recording.dto';
@@ -126,12 +128,27 @@ export class RecordingsController {
     return this.recordingsService.getRecordingsForStudent(user.id, topicId);
   }
 
+  @Post('recordings/:id/authorize')
+  authorizePlayback(
+    @Param('id') id: string,
+    @Body('deviceId') deviceId: string | undefined,
+    @CurrentUser() user: { id: string },
+    @Req() req: Request,
+  ) {
+    const ip = (req.ip || req.headers['x-forwarded-for'] || undefined) as string | undefined;
+    return this.recordingsService.authorizePlayback(id, user.id, deviceId, ip);
+  }
+
   @Get('recordings/:id/play')
   getPlaybackUrl(
     @Param('id') id: string,
+    @Query('token') token: string,
+    @Query('deviceId') deviceId: string | undefined,
     @CurrentUser() user: { id: string },
+    @Req() req: Request,
   ) {
-    return this.recordingsService.getPlaybackUrl(id, user.id);
+    const ip = (req.ip || req.headers['x-forwarded-for'] || undefined) as string | undefined;
+    return this.recordingsService.getPlaybackUrl(id, user.id, token, deviceId, ip);
   }
 
   @Post('recordings/:id/progress')
@@ -235,12 +252,27 @@ export class RecordingsController {
     return this.recordingsService.getRecordingsForStudent(user.id, topicId);
   }
 
+  @Post('videos/:id/authorize')
+  legacyAuthorizePlayback(
+    @Param('id') id: string,
+    @Body('deviceId') deviceId: string | undefined,
+    @CurrentUser() user: { id: string },
+    @Req() req: Request,
+  ) {
+    const ip = (req.ip || req.headers['x-forwarded-for'] || undefined) as string | undefined;
+    return this.recordingsService.authorizePlayback(id, user.id, deviceId, ip);
+  }
+
   @Get('videos/:id/play')
   legacyGetPlaybackUrl(
     @Param('id') id: string,
+    @Query('token') token: string,
+    @Query('deviceId') deviceId: string | undefined,
     @CurrentUser() user: { id: string },
+    @Req() req: Request,
   ) {
-    return this.recordingsService.getPlaybackUrl(id, user.id);
+    const ip = (req.ip || req.headers['x-forwarded-for'] || undefined) as string | undefined;
+    return this.recordingsService.getPlaybackUrl(id, user.id, token, deviceId, ip);
   }
 
   @Post('videos/:id/progress')

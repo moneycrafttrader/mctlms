@@ -1,24 +1,29 @@
-import { createClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
 import { fetchApi } from '@/lib/api-client';
 import { API_ROUTES } from '@/lib/constants';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ProfileClient } from './profile-client';
+import { DeviceList } from '@/components/shared/DeviceList';
 
 export const dynamic = 'force-dynamic';
 
 export default async function StudentProfilePage() {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
-
-  const email = session?.user?.email ?? '';
+  const cookieStore = await cookies();
+  const token = cookieStore.get('access_token')?.value;
+  let email = '';
   let batchNames: string[] = [];
 
   if (token) {
     try {
-      const batches: any = await fetchApi(`${API_ROUTES.USERS}/me/batches`, { token });
+      const payload = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64').toString(),
+      );
+      email = payload.email ?? '';
+    } catch {
+      // JWT decode failed
+    }
+    try {
+      const batches: any = await fetchApi(`${API_ROUTES.USERS}/me/batches`);
       batchNames = (Array.isArray(batches) ? batches : []).map((b: any) => b.name);
     } catch {
       // API unavailable
@@ -28,8 +33,9 @@ export default async function StudentProfilePage() {
   return (
     <div>
       <PageHeader title="Profile" />
-      <div className="px-4 md:px-0">
+      <div className="space-y-4 px-4 md:px-0">
         <ProfileClient email={email} batchNames={batchNames} />
+        <DeviceList />
       </div>
     </div>
   );

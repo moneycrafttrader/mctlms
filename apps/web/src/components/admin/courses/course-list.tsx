@@ -16,10 +16,9 @@ import {
 
 interface CourseListProps {
   initialCourses: Course[];
-  token?: string;
 }
 
-export function CourseList({ initialCourses, token }: CourseListProps) {
+export function CourseList({ initialCourses }: CourseListProps) {
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -43,13 +42,13 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
 
   const refreshCourses = useCallback(async () => {
     try {
-      const result = await getCourses(token);
+      const result = await getCourses();
       setCourses(result.items);
       revalidateServerCache();
     } catch {
       // silently fail — data stays as last-known state
     }
-  }, [token, revalidateServerCache]);
+  }, [revalidateServerCache]);
 
   const openBatchModal = (courseId: string) => {
     setSelectedCourseId(courseId);
@@ -63,7 +62,7 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
   const confirmDeleteBatch = async () => {
     if (!deletingBatch) return;
     try {
-      await deleteBatch(deletingBatch.id, token);
+      await deleteBatch(deletingBatch.id);
       setDeletingBatch(null);
       refreshCourses();
     } catch {
@@ -74,7 +73,7 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
   const confirmDeleteCourse = async () => {
     if (!deletingCourse) return;
     try {
-      await deleteCourse(deletingCourse.id, token);
+      await deleteCourse(deletingCourse.id);
       setDeletingCourse(null);
       refreshCourses();
     } catch {
@@ -191,7 +190,6 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
             setShowCourseModal(false);
             refreshCourses();
           }}
-          token={token}
         />
       </Modal>
 
@@ -212,7 +210,6 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
               setSelectedCourseId(null);
               refreshCourses();
             }}
-            token={token}
           />
         )}
       </Modal>
@@ -231,7 +228,6 @@ export function CourseList({ initialCourses, token }: CourseListProps) {
               setEditingBatch(null);
               refreshCourses();
             }}
-            token={token}
           />
         )}
       </Modal>

@@ -12,7 +12,7 @@ interface AssignBatchModalProps {
   studentLabel: string;
   onClose: () => void;
   onSuccess: () => void;
-  token?: string;
+
 }
 
 export function AssignBatchModal({
@@ -22,7 +22,6 @@ export function AssignBatchModal({
   studentLabel,
   onClose,
   onSuccess,
-  token,
 }: AssignBatchModalProps) {
   const [allBatches, setAllBatches] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,14 +34,14 @@ export function AssignBatchModal({
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getAllBatches({ isActive: true, limit: 100 }, token);
+      const result = await getAllBatches({ isActive: true, limit: 100 });
       setAllBatches(result.items);
     } catch {
       setError('Failed to load batches');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -62,7 +61,7 @@ export function AssignBatchModal({
     setAdding(true);
     setError('');
     try {
-      await assignStudentsToBatch(selectedBatchId, studentIds, token);
+      await assignStudentsToBatch(selectedBatchId, studentIds);
       setSelectedBatchId('');
       onSuccess();
       await fetchBatches();
@@ -78,7 +77,7 @@ export function AssignBatchModal({
     setRemoving(confirmRemove.batchId);
     setError('');
     try {
-      await removeStudentsFromBatch(confirmRemove.batchId, studentIds, token);
+      await removeStudentsFromBatch(confirmRemove.batchId, studentIds);
       setConfirmRemove(null);
       onSuccess();
       await fetchBatches();

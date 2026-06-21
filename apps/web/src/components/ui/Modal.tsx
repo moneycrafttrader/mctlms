@@ -1,20 +1,45 @@
 'use client';
-
-import { ReactNode, useEffect } from 'react';
+import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
+import { useEffect, useCallback } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
-  children: ReactNode;
+  title?: string;
+  description?: string;
+  children: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  footer?: React.ReactNode;
+  className?: string;
 }
 
-export function Modal({ isOpen, onClose, title, children }: ModalProps) {
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
+const sizeClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+  full: 'max-w-[95vw] max-h-[95vh]',
+};
+
+export function Modal({
+  isOpen,
+  onClose,
+  title,
+  description,
+  children,
+  size = 'md',
+  footer,
+  className,
+}: ModalProps) {
+  const handleEscape = useCallback(
+    (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-    };
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
     if (isOpen) {
       document.addEventListener('keydown', handleEscape);
       document.body.style.overflow = 'hidden';
@@ -23,29 +48,55 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = '';
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, handleEscape]);
 
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl bg-white shadow-xl"
+        className={cn(
+          'w-full bg-surface-card rounded-card-lg p-6 shadow-modal animate-scale-in',
+          sizeClasses[size],
+          className,
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        {(title || description) && (
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              {title && (
+                <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
+              )}
+              {description && (
+                <p className="text-sm text-text-muted mt-1">{description}</p>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="ml-4 rounded-lg p-1.5 text-text-muted hover:bg-surface-muted hover:text-text-primary transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+        {!title && !description && (
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="absolute top-4 right-4 rounded-lg p-1.5 text-text-muted hover:bg-surface-muted hover:text-text-primary transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
-        </div>
-        <div className="px-6 py-4">{children}</div>
+        )}
+        <div className="overflow-y-auto max-h-[calc(100vh-200px)]">{children}</div>
+        {footer && (
+          <div className="flex justify-end gap-3 pt-4 mt-4 border-t border-surface-border">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

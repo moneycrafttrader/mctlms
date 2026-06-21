@@ -1,0 +1,1 @@
+export const SCREEN_RECORDING_DETECTION_ENABLED = true;

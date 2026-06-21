@@ -8,10 +8,9 @@ import { getStudentPlans, type PaymentPlan } from '@/lib/api/payments';
 
 interface StudentLedgerProps {
   students: { id: string; name: string; email: string }[];
-  token?: string;
 }
 
-export function StudentLedger({ students, token }: StudentLedgerProps) {
+export function StudentLedger({ students }: StudentLedgerProps) {
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,14 +28,14 @@ export function StudentLedger({ students, token }: StudentLedgerProps) {
     }
     setLoading(true);
     try {
-      const result = await getStudentPlans(selectedStudentId, token);
+      const result = await getStudentPlans(selectedStudentId);
       setPlans(result);
     } catch {
       setPlans([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedStudentId, token]);
+  }, [selectedStudentId]);
 
   useEffect(() => {
     fetchPlans();
@@ -229,7 +228,6 @@ export function StudentLedger({ students, token }: StudentLedgerProps) {
               setMarkPaidTarget(null);
               fetchPlans();
             }}
-            token={token}
           />
         )}
       </Modal>

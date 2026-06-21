@@ -1,21 +1,16 @@
-/*
- * MuxVideoPlayer — wraps @mux/mux-player-react with a placeholder state
- *
- * Displays a full-width Mux video player when a playbackId is provided,
- * or a centered placeholder prompt when no video is selected.
- */
 'use client';
 
 import MuxPlayer from '@mux/mux-player-react';
 import { PlayCircle } from 'lucide-react';
 
 interface MuxVideoPlayerProps {
-  playbackId?: string;
+  playbackUrl?: string;
+  thumbnail?: string;
   title?: string;
 }
 
-export function MuxVideoPlayer({ playbackId, title }: MuxVideoPlayerProps) {
-  if (!playbackId) {
+export function MuxVideoPlayer({ playbackUrl, thumbnail, title }: MuxVideoPlayerProps) {
+  if (!playbackUrl) {
     return (
       <div className="flex aspect-video w-full flex-col items-center justify-center rounded-xl border border-gray-800 bg-gray-900 text-gray-400 shadow-lg">
         <PlayCircle className="mb-4 h-16 w-16 opacity-50" />
@@ -28,7 +23,8 @@ export function MuxVideoPlayer({ playbackId, title }: MuxVideoPlayerProps) {
     <div className="aspect-video w-full overflow-hidden rounded-xl bg-black shadow-lg border border-gray-200">
       <MuxPlayer
         streamType="on-demand"
-        playbackId={playbackId}
+        src={playbackUrl}
+        poster={thumbnail || undefined}
         metadata={{
           video_title: title || 'Course Video',
         }}

@@ -21,7 +21,6 @@ interface ScheduleSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  token?: string;
 }
 
 const formSchema = z.object({
@@ -37,7 +36,6 @@ export function ScheduleSessionModal({
   isOpen,
   onClose,
   onSuccess,
-  token,
 }: ScheduleSessionModalProps) {
   const router = useRouter();
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -67,14 +65,14 @@ export function ScheduleSessionModal({
     setLoadingBatches(true);
     setFetchError('');
     try {
-      const result = await getAllBatches({ isActive: true, limit: 200 }, token);
+      const result = await getAllBatches({ isActive: true, limit: 200 });
       setBatches(result.items);
     } catch {
       setFetchError('Failed to load batches');
     } finally {
       setLoadingBatches(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -121,7 +119,7 @@ export function ScheduleSessionModal({
         batchIds: Array.from(selectedBatchIds),
       };
       console.log('[ScheduleSession] payload:', payload);
-      await scheduleSession(payload, token);
+      await scheduleSession(payload);
       toast.success('Class scheduled successfully');
       onSuccess?.();
       onClose();

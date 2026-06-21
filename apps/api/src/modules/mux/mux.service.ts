@@ -179,21 +179,58 @@ export class MuxService {
   // ──────────────────────────────────────────────────────────────
 
   /**
-   * Generate a time-limited signed playback URL for a single user.
+   * Generate a 60-second signed playback URL with a unique session UUID
+   * embedded in the JWT for per-request audit traceability.
    *
-   * 4-hour expiry means a student can't bookmark the URL and share it.
-   * Each page load generates a fresh token tied to their session.
+   * Security guarantees:
+   *   - URL expires in 60s — cannot be bookmarked, shared, or reused.
+   *   - Every request gets its own UUID session identifier.
+   *   - Mux CDN verifies RS256 signature + expiry before serving segments.
+   *   - All assets use playback_policy: 'signed' — raw playback IDs are rejected.
    *
-   * Steps:
-   *   1. Get signing key ID and private key from environment
-   *   2. Fix escaped newlines in the private key (common .env issue)
-   *   3. Sign a JWT with RS256 using the Mux signing key
-   *   4. Return the full playback URL with the signed token
+   * Call ONCE per playback request. Never cache the returned URL.
    */
   async getSignedPlaybackUrl(
     playbackId: string,
-    userId: string,
-    expiresInSeconds = 14400,
+    sessionId: string,
+  ): Promise<{ url: string; expiresAt: string }> {
+    const expiresAt = Math.floor(Date.now() / 1000) + 60;
+    const token = await this.signMuxJwt(playbackId, sessionId, 'v', expiresAt);
+    return {
+      url: `https://stream.mux.com/${playbackId}.m3u8?token=${token}`,
+      expiresAt: new Date(expiresAt * 1000).toISOString(),
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  getSignedThumbnailUrl
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Generate a signed thumbnail URL with 5-minute expiry.
+   * Less sensitive than playback, but still signed to prevent hotlinking.
+   */
+  async getSignedThumbnailUrl(
+    playbackId: string,
+    sessionId: string,
+  ): Promise<{ url: string; expiresAt: string }> {
+    const expiresAt = Math.floor(Date.now() / 1000) + 300;
+    const token = await this.signMuxJwt(playbackId, sessionId, 't', expiresAt);
+    return {
+      url: `https://image.mux.com/${playbackId}/thumbnail.jpg?token=${token}`,
+      expiresAt: new Date(expiresAt * 1000).toISOString(),
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  //  signMuxJwt (private)
+  // ──────────────────────────────────────────────────────────────
+
+  private async signMuxJwt(
+    playbackId: string,
+    sessionId: string,
+    audience: string,
+    expiresAt: number,
   ): Promise<string> {
     const keyId = this.configService.get<string>('MUX_SIGNING_KEY_ID');
     let privateKey = this.configService.get<string>('MUX_SIGNING_PRIVATE_KEY');
@@ -204,50 +241,20 @@ export class MuxService {
       );
     }
 
-    // Replace literal \n with actual newlines (env vars flatten newlines)
     privateKey = privateKey.replace(/\\n/g, '\n');
 
     const header = { alg: 'RS256', typ: 'JWT', kid: keyId };
-    const payload = {
+    const payload: Record<string, unknown> = {
       sub: playbackId,
-      aud: 'v', // 'v' for video playback
-      exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
+      aud: audience,
+      exp: expiresAt,
     };
 
-    const token = this.signJwt(header, payload, privateKey);
+    // Embed the unique session UUID so every signed URL is traceable.
+    // Mux ignores unknown claims — this is for our own audit logging.
+    payload.session_uuid = sessionId;
 
-    return `https://stream.mux.com/${playbackId}.m3u8?token=${token}`;
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  //  getSignedThumbnailUrl
-  // ──────────────────────────────────────────────────────────────
-
-  /**
-   * Generate a signed thumbnail URL for a video.
-   *
-   * Same signing process as playback URLs but with audience 't' (thumbnail).
-   */
-  async getSignedThumbnailUrl(playbackId: string): Promise<string> {
-    const keyId = this.configService.get<string>('MUX_SIGNING_KEY_ID');
-    let privateKey = this.configService.get<string>('MUX_SIGNING_PRIVATE_KEY');
-
-    if (!keyId || !privateKey) {
-      throw new Error('MUX_SIGNING_KEY_ID and MUX_SIGNING_PRIVATE_KEY must be set');
-    }
-
-    privateKey = privateKey.replace(/\\n/g, '\n');
-
-    const header = { alg: 'RS256', typ: 'JWT', kid: keyId };
-    const payload = {
-      sub: playbackId,
-      aud: 't',
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-
-    const token = this.signJwt(header, payload, privateKey);
-
-    return `https://image.mux.com/${playbackId}/thumbnail.jpg?token=${token}`;
+    return this.signJwt(header, payload, privateKey);
   }
 
   // ──────────────────────────────────────────────────────────────

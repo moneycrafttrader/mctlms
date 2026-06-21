@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Film,
   PlayCircle,
@@ -8,10 +8,10 @@ import {
   Clock,
   Loader2,
 } from 'lucide-react';
-import { type StudentVideo, getMyVideos, getVideoPlaybackUrl } from '@/lib/api/videos';
+import { type StudentVideo, getMyVideos } from '@/lib/api/videos';
+import { authorizePlayback, getPlaybackUrl } from '@/lib/api/playback';
 
 interface VideoLibraryProps {
-  token?: string;
 }
 
 interface VideoWithTopic extends StudentVideo {
@@ -24,14 +24,15 @@ function secondsToMinutes(seconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export function VideoLibrary({ token }: VideoLibraryProps) {
+export function VideoLibrary(_props: VideoLibraryProps) {
   const [videos, setVideos] = useState<VideoWithTopic[]>([]);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState<string | null>(null);
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    getMyVideos(undefined, token)
+    getMyVideos()
       .then((data) => {
         const withTopics = (data as any[]).map((v) => ({
           ...v,
@@ -41,12 +42,14 @@ export function VideoLibrary({ token }: VideoLibraryProps) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const handlePlay = async (videoId: string) => {
     setPlaying(videoId);
     try {
-      const result = await getVideoPlaybackUrl(videoId, token);
+      const auth = await authorizePlayback(videoId);
+      tokenRef.current = auth.playbackToken;
+      const result = await getPlaybackUrl(videoId, auth.playbackToken);
       setPlaybackUrl(result.url);
     } catch {
       setPlaying(null);
@@ -169,6 +172,9 @@ export function VideoLibrary({ token }: VideoLibraryProps) {
               autoPlay
               className="w-full aspect-video"
               src={playbackUrl}
+              controlsList="nodownload noremoteplayback"
+              disablePictureInPicture
+              onContextMenu={(e) => e.preventDefault()}
             >
               Your browser does not support the video tag.
             </video>

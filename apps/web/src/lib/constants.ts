@@ -11,12 +11,20 @@ export const ROUTES = {
     PAYMENTS: '/admin/payments',
     BUSINESS_CONFIG: '/admin/business-config',
     SESSIONS: '/admin/sessions',
+    VIOLATIONS: '/admin/violations',
+    TESTS: '/admin/tests',
+    TESTS_NEW: '/admin/tests/new',
+    QUESTIONS: '/admin/questions',
+    REVIEW_QUEUE: '/admin/review-queue',
+    ANALYTICS: '/admin/analytics',
   },
   STUDENT: {
     HOME: '/student',
     COURSES: '/student/courses',
     LIVE_SESSIONS: '/student/live-sessions',
     VIDEOS: '/student/videos',
+    TESTS: '/student/tests',
+    RESULTS: '/student/results',
   },
 } as const;
 
@@ -54,5 +62,10 @@ export const API_ROUTES = {
   ADMIN_RECORDINGS: '/admin/recordings',
   ADMIN_TOPICS: '/admin/topics',
   ADMIN_UPLOAD_URL: '/admin/upload-url',
+  ADMIN_TESTS: '/admin/tests',
+  ADMIN_TESTS_NEW: '/admin/tests/new',
+  ADMIN_QUESTIONS: '/admin/questions',
+  ADMIN_REVIEW_QUEUE: '/admin/review-queue',
+  ADMIN_ANALYTICS: '/admin/analytics',
   ZOOM_SIGNATURE: '/zoom/signature',
 } as const;

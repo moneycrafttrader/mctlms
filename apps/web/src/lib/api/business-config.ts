@@ -22,17 +22,15 @@ export interface BusinessConfig {
   next_receipt_number: number;
 }
 
-export async function getBusinessConfig(token?: string) {
-  return fetchApi<BusinessConfig>('/business-config', { token });
+export async function getBusinessConfig() {
+  return fetchApi<BusinessConfig>('/business-config');
 }
 
 export async function updateBusinessConfig(
   data: Partial<Omit<BusinessConfig, 'id' | 'next_invoice_number' | 'next_receipt_number'>>,
-  token?: string,
 ) {
   return fetchApi<BusinessConfig>('/business-config', {
     method: 'PUT',
     body: JSON.stringify(data),
-    token,
   });
 }

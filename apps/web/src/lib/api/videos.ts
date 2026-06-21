@@ -55,11 +55,12 @@ export interface UploadUrlResponse {
 export interface PlaybackResponse {
   url: string;
   thumbnail: string;
+  sessionId: string;
+  expiresAt: string;
 }
 
 export async function getAdminVideos(
   params?: { topicId?: string; page?: number; limit?: number },
-  token?: string,
 ) {
   const searchParams = new URLSearchParams();
   if (params?.topicId) searchParams.set('topicId', params.topicId);
@@ -68,60 +69,53 @@ export async function getAdminVideos(
   const query = searchParams.toString();
   return fetchApi<AdminVideosResponse>(
     `${API_ROUTES.ADMIN_RECORDINGS}/all${query ? `?${query}` : ''}`,
-    { token },
   );
 }
 
-export async function getVideoTopics(token?: string) {
-  return fetchApi<Topic[]>(`${API_ROUTES.ADMIN_TOPICS}`, { token });
+export async function getVideoTopics() {
+  return fetchApi<Topic[]>(`${API_ROUTES.ADMIN_TOPICS}`);
 }
 
-export async function getMuxUploadUrl(title: string, token?: string) {
+export async function getMuxUploadUrl(title: string) {
   return fetchApi<UploadUrlResponse>(`${API_ROUTES.ADMIN_UPLOAD_URL}`, {
     method: 'POST',
     body: JSON.stringify({ title }),
-    token,
   });
 }
 
 export async function updateVideoMetadata(
   videoId: string,
   data: { title?: string; description?: string; topicId?: string | null },
-  token?: string,
 ) {
   return fetchApi<AdminVideo>(`${API_ROUTES.ADMIN_RECORDINGS}/${videoId}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
-    token,
   });
 }
 
-export async function deleteVideo(videoId: string, token?: string) {
+export async function deleteVideo(videoId: string) {
   return fetchApi<{ deleted: boolean }>(`${API_ROUTES.ADMIN_RECORDINGS}/${videoId}`, {
     method: 'DELETE',
-    token,
   });
 }
 
-export async function getMyVideos(topicId?: string, token?: string) {
+export async function getMyVideos(topicId?: string) {
   const params = topicId ? `?topicId=${topicId}` : '';
-  return fetchApi<StudentVideo[]>(`${API_ROUTES.RECORDINGS}/my${params}`, { token });
+  return fetchApi<StudentVideo[]>(`${API_ROUTES.RECORDINGS}/my${params}`);
 }
 
-export async function getVideoPlaybackUrl(videoId: string, token?: string) {
-  return fetchApi<PlaybackResponse>(`${API_ROUTES.RECORDINGS}/${videoId}/play`, { token });
+export async function getVideoPlaybackUrl(videoId: string) {
+  return fetchApi<PlaybackResponse>(`${API_ROUTES.RECORDINGS}/${videoId}/play`);
 }
 
 export async function updateVideoProgress(
   videoId: string,
   watchedSeconds: number,
   completed?: boolean,
-  token?: string,
 ) {
   return fetchApi(`${API_ROUTES.RECORDINGS}/${videoId}/progress`, {
     method: 'POST',
     body: JSON.stringify({ watchedSeconds, completed }),
-    token,
   });
 }
 
@@ -129,12 +123,11 @@ export interface BatchVideo {
   id: string;
   title: string;
   description?: string;
-  muxPlaybackId?: string;
   duration?: number;
   status: string;
   createdAt: string;
 }
 
-export async function getBatchVideos(batchId: string, token?: string) {
-  return fetchApi<BatchVideo[]>(`${API_ROUTES.RECORDINGS}/batch/${batchId}`, { token });
+export async function getBatchVideos(batchId: string) {
+  return fetchApi<BatchVideo[]>(`${API_ROUTES.RECORDINGS}/batch/${batchId}`);
 }

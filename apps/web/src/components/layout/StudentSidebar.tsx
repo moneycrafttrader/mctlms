@@ -1,15 +1,27 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Home, BookOpen, Calendar, PlayCircle, User, LogOut } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
 import { ROUTES } from '@/lib/constants';
+import {
+  LayoutDashboard,
+  BookOpen,
+  Video,
+  Radio,
+  ClipboardList,
+  BarChart3,
+  User,
+  Trophy,
+} from 'lucide-react';
 
 const navItems = [
-  { label: 'Dashboard', href: ROUTES.STUDENT.HOME, icon: Home, exact: true },
+  { label: 'Dashboard', href: ROUTES.STUDENT.HOME, icon: LayoutDashboard, exact: true },
   { label: 'Courses', href: ROUTES.STUDENT.COURSES, icon: BookOpen },
-  { label: 'Live Sessions', href: ROUTES.STUDENT.LIVE_SESSIONS, icon: Calendar },
-  { label: 'Videos', href: ROUTES.STUDENT.VIDEOS, icon: PlayCircle },
+  { label: 'Live Sessions', href: ROUTES.STUDENT.LIVE_SESSIONS, icon: Radio },
+  { label: 'Videos', href: ROUTES.STUDENT.VIDEOS, icon: Video },
+  { label: 'Tests', href: ROUTES.STUDENT.TESTS, icon: ClipboardList },
+  { label: 'Results', href: ROUTES.STUDENT.RESULTS, icon: BarChart3 },
   { label: 'Profile', href: '/student/profile', icon: User },
 ];
 
@@ -23,26 +35,51 @@ export function StudentSidebar() {
 
   return (
     <>
-      <div className="flex h-16 items-center gap-2 border-b border-gray-700 px-6">
-        <BookOpen className="h-6 w-6 text-brand-gold" />
-        <span className="text-lg font-bold text-white">MCT Learn</span>
+      <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-divider px-6">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/20">
+          <Trophy className="h-4 w-4 text-brand-300" />
+        </div>
+        <div>
+          <span className="text-base font-bold tracking-tight text-white">MCT Learn</span>
+          <p className="text-2xs font-medium text-brand-200">Student Portal</p>
+        </div>
       </div>
+
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`sidebar-link${isActive(item.href, item.exact, pathname) ? ' active' : ''}`}
-          >
-            <item.icon className="h-5 w-5" />
-            {item.label}
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          const active = isActive(item.href, item.exact, pathname);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                'sidebar-link',
+                active && 'active',
+              )}
+            >
+              <item.icon className="h-5 w-5 shrink-0" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
       </nav>
-      <div className="border-t border-gray-700 px-3 py-4">
-        <Link href={ROUTES.LOGIN} className="sidebar-link">
-          <LogOut className="h-5 w-5" />
-          Logout
+
+      <div className="border-t border-sidebar-divider px-4 py-4">
+        <div className="flex items-center gap-3 rounded-xl px-3 py-2">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
+            U
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-white">Student</p>
+            <p className="truncate text-2xs text-brand-200">Online</p>
+          </div>
+        </div>
+        <Link
+          href={ROUTES.LOGIN}
+          className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-brand-200 transition-colors hover:bg-sidebar-hover hover:text-white"
+        >
+          <User className="h-4 w-4" />
+          Sign out
         </Link>
       </div>
     </>

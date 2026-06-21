@@ -5,7 +5,6 @@ import { type LiveSession } from '@/lib/api/live-sessions';
 
 interface Props {
   sessions: LiveSession[];
-  token?: string;
 }
 
 function formatTime(iso: string) {

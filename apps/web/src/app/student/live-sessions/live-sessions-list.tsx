@@ -2,13 +2,12 @@
 
 import { useState } from 'react';
 import { Video, Calendar, Clock, ExternalLink, Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { type LiveSession, getSessionJoinUrl } from '@/lib/api/live-sessions';
+import { type LiveSession, getSessionJoinUrl, requestJoinToken } from '@/lib/api/live-sessions';
 import { SessionStatusBadge } from '@/components/shared/SessionStatusBadge';
 
 interface Props {
   upcoming: LiveSession[];
   past: (LiveSession & { attendanceStatus?: string })[];
-  token?: string;
 }
 
 function formatTime(iso: string) {
@@ -39,18 +38,17 @@ function getRelativeTime(startTime: string): string {
 
 function SessionCard({
   session,
-  token,
 }: {
   session: LiveSession & { attendanceStatus?: string };
-  token?: string;
 }) {
   const [joining, setJoining] = useState(false);
 
   const handleJoin = async () => {
     setJoining(true);
     try {
-      const url = await getSessionJoinUrl(session.id, token);
-      window.open(url, '_blank');
+      const { token } = await requestJoinToken(session.id);
+      const { joinUrl } = await getSessionJoinUrl(session.id, token);
+      window.open(joinUrl, '_blank');
     } catch {
       // silent
     } finally {
@@ -125,7 +123,7 @@ function SessionCard({
   );
 }
 
-export function LiveSessionsList({ upcoming, past, token }: Props) {
+export function LiveSessionsList({ upcoming, past }: Props) {
   const todayStr = new Date().toDateString();
   const todaySessions = upcoming.filter(
     (s) => new Date(s.start_time).toDateString() === todayStr,
@@ -151,13 +149,13 @@ export function LiveSessionsList({ upcoming, past, token }: Props) {
   return (
     <div className="space-y-6">
       {todaySessions.length > 0 && (
-        <Section title="Today" sessions={todaySessions} token={token} />
+        <Section title="Today" sessions={todaySessions} />
       )}
       {laterSessions.length > 0 && (
-        <Section title="Upcoming" sessions={laterSessions} token={token} />
+        <Section title="Upcoming" sessions={laterSessions} />
       )}
       {past.length > 0 && (
-        <Section title="Past" sessions={past} token={token} past />
+        <Section title="Past" sessions={past} past />
       )}
     </div>
   );
@@ -166,12 +164,10 @@ export function LiveSessionsList({ upcoming, past, token }: Props) {
 function Section({
   title,
   sessions,
-  token,
   past,
 }: {
   title: string;
   sessions: (LiveSession & { attendanceStatus?: string })[];
-  token?: string;
   past?: boolean;
 }) {
   return (
@@ -181,7 +177,7 @@ function Section({
       </h3>
       <div className="space-y-2">
         {sessions.map((session) => (
-          <SessionCard key={session.id} session={session} token={token} />
+          <SessionCard key={session.id} session={session} />
         ))}
       </div>
     </div>

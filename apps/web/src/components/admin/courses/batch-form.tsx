@@ -12,11 +12,10 @@ const SCHEDULE_TYPES = [
 interface BatchFormProps {
   courseId: string;
   onSuccess: () => void;
-  token?: string;
   batch?: Batch;
 }
 
-export function BatchForm({ courseId, onSuccess, token, batch }: BatchFormProps) {
+export function BatchForm({ courseId, onSuccess, batch }: BatchFormProps) {
   const [name, setName] = useState(batch?.name ?? '');
   const [scheduleType, setScheduleType] = useState(batch?.schedule_type ?? 'weekday');
   const [error, setError] = useState('');
@@ -31,9 +30,9 @@ export function BatchForm({ courseId, onSuccess, token, batch }: BatchFormProps)
 
     try {
       if (isEditing) {
-        await updateBatch(batch.id, { name, scheduleType }, token);
+        await updateBatch(batch.id, { name, scheduleType });
       } else {
-        await createBatch(courseId, { name, scheduleType }, token);
+        await createBatch(courseId, { name, scheduleType });
       }
       setName('');
       onSuccess();

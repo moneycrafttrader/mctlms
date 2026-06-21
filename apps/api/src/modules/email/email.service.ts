@@ -167,6 +167,85 @@ export class EmailService implements OnModuleInit {
   }
 
   /**
+   * Login alert email — sent when a new/unknown device logs in.
+   * Fire-and-forget — never await this from the login path.
+   */
+  async sendLoginAlert(
+    toEmail: string,
+    userName: string,
+    browser: string,
+    os: string,
+    ipAddress: string,
+    frontendUrl: string,
+  ): Promise<void> {
+    if (this.isStub || !this.resend) {
+      this.logger.log(
+        `[STUB LOGIN ALERT] To: ${toEmail} | User: ${userName} | Device: ${browser} on ${os} | IP: ${ipAddress}`,
+      );
+      return;
+    }
+
+    try {
+      const { data, error } = await this.resend.emails.send({
+        from: this.fromAddress,
+        to: toEmail,
+        subject: 'New login to your MCT Learn account',
+        html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+  <div style="background: #1e3a5f; padding: 24px; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">MCT Learn</h1>
+  </div>
+  <div style="background: #f9f9f9; padding: 32px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0;">
+    <h2 style="color: #1e3a5f; margin-top: 0;">New sign-in detected</h2>
+    <p>Hi ${userName},</p>
+    <p>A new device just signed in to your MCT Learn account:</p>
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin: 20px 0;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 8px 0; color: #666; width: 100px;"><strong>Browser</strong></td>
+          <td style="padding: 8px 0;">${browser}</td>
+        </tr>
+        <tr style="border-top: 1px solid #eee;">
+          <td style="padding: 8px 0; color: #666;"><strong>OS</strong></td>
+          <td style="padding: 8px 0;">${os}</td>
+        </tr>
+        <tr style="border-top: 1px solid #eee;">
+          <td style="padding: 8px 0; color: #666;"><strong>IP Address</strong></td>
+          <td style="padding: 8px 0; font-family: monospace;">${ipAddress}</td>
+        </tr>
+      </table>
+    </div>
+    <p>If this was you, you can ignore this email. To manage trusted devices, visit your profile.</p>
+    <p style="margin-top: 24px;">
+      <a href="${frontendUrl}/login"
+         style="background: #1e3a5f; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block;">
+        Review Account &rarr;
+      </a>
+    </p>
+    <p style="color: #888; font-size: 13px; margin-top: 32px; border-top: 1px solid #eee; padding-top: 16px;">
+      If you did not sign in, please change your password immediately and contact support.<br>
+      MCT Learn &mdash; Money Craft Trader
+    </p>
+  </div>
+</body>
+</html>`.trim(),
+      });
+
+      if (error) {
+        this.logger.error(`Failed to send login alert to ${toEmail}: ${error.message}`);
+        return;
+      }
+
+      this.logger.log(`Login alert sent to ${toEmail} (id: ${data?.id})`);
+    } catch (err: any) {
+      this.logger.error(`Exception sending login alert to ${toEmail}: ${err.message}`);
+    }
+  }
+
+  /**
    * Builds the HTML body for the welcome email.
    * Keep it simple — plain HTML, no external CSS frameworks.
    * Gmail clips emails over 102kb, so keep this minimal.

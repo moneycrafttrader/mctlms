@@ -2,13 +2,12 @@
 
 import { useState } from 'react';
 import { Calendar, Clock, ExternalLink, Loader2, Video } from 'lucide-react';
-import { type LiveSession, getSessionJoinUrl } from '@/lib/api/live-sessions';
+import { type LiveSession, getSessionJoinUrl, requestJoinToken } from '@/lib/api/live-sessions';
 import { SessionStatusBadge } from '@/components/shared/SessionStatusBadge';
 
 interface Props {
   upcoming: LiveSession[];
   past: LiveSession[];
-  token?: string;
 }
 
 function formatTime(iso: string) {
@@ -37,14 +36,15 @@ function getRelativeTime(startTime: string): string {
   return 'Starting now';
 }
 
-function JoinButton({ session, token }: { session: LiveSession; token?: string }) {
+function JoinButton({ session }: { session: LiveSession }) {
   const [joining, setJoining] = useState(false);
 
   const handleJoin = async () => {
     setJoining(true);
     try {
-      const url = await getSessionJoinUrl(session.id, token);
-      window.open(url, '_blank');
+      const { token } = await requestJoinToken(session.id);
+      const { joinUrl } = await getSessionJoinUrl(session.id, token);
+      window.open(joinUrl, '_blank');
     } catch {
       // silent
     } finally {
@@ -74,7 +74,7 @@ function JoinButton({ session, token }: { session: LiveSession; token?: string }
   );
 }
 
-export function CourseDetailSessions({ upcoming, past, token }: Props) {
+export function CourseDetailSessions({ upcoming, past }: Props) {
   if (upcoming.length === 0 && past.length === 0) {
     return (
       <div className="rounded-card border border-surface-border bg-surface-card p-4">
@@ -124,7 +124,7 @@ export function CourseDetailSessions({ upcoming, past, token }: Props) {
                 </p>
               )}
             </div>
-            <JoinButton session={session} token={token} />
+            <JoinButton session={session} />
           </div>
         ))}
       </div>

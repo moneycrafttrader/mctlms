@@ -21,7 +21,9 @@ import {
   Param,
   Body,
   Query,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { UserRole } from '@lms/shared-types';
 import { VideosService } from './videos.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
@@ -216,12 +218,27 @@ export class VideosController {
    * This is the security checkpoint — verifies batch access before returning a
    * time-limited URL (expires in 4 hours).
    */
+  @Post(':id/authorize')
+  authorizePlayback(
+    @Param('id') id: string,
+    @Body('deviceId') deviceId: string | undefined,
+    @CurrentUser() user: { id: string },
+    @Req() req: Request,
+  ) {
+    const ip = (req.ip || req.headers['x-forwarded-for'] || undefined) as string | undefined;
+    return this.videosService.authorizePlayback(id, user.id, deviceId, ip);
+  }
+
   @Get(':id/play')
   getPlaybackUrl(
     @Param('id') id: string,
+    @Query('token') token: string,
+    @Query('deviceId') deviceId: string | undefined,
     @CurrentUser() user: { id: string },
+    @Req() req: Request,
   ) {
-    return this.videosService.getPlaybackUrl(id, user.id);
+    const ip = (req.ip || req.headers['x-forwarded-for'] || undefined) as string | undefined;
+    return this.videosService.getPlaybackUrl(id, user.id, token, deviceId, ip);
   }
 
   /**

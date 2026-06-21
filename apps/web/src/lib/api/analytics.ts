@@ -15,6 +15,6 @@ export interface AdminOverview {
 /**
  * Fetch aggregate dashboard data for the admin overview.
  */
-export async function getAdminOverview(token?: string) {
-  return fetchApi<AdminOverview>('/analytics/admin-overview', { token });
+export async function getAdminOverview() {
+  return fetchApi<AdminOverview>('/analytics/admin-overview');
 }

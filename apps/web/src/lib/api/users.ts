@@ -22,7 +22,6 @@ export interface User {
  */
 export async function getUsers(
   params: { role?: string; page?: number; limit?: number; includeInactive?: boolean } = {},
-  token?: string,
 ) {
   const query = new URLSearchParams();
   if (params.role) query.set('role', params.role);
@@ -35,7 +34,6 @@ export async function getUsers(
 
   return fetchApi<{ items: User[]; total: number; page: number; limit: number }>(
     endpoint,
-    { token },
   );
 }
 
@@ -43,18 +41,17 @@ export async function getUsers(
  * Soft-delete a user — sets is_active = false.
  * DELETE /users/:id
  */
-export async function deleteUser(id: string, token?: string) {
+export async function deleteUser(id: string) {
   return fetchApi<{ deleted: boolean }>(`${API_ROUTES.USERS}/${id}`, {
     method: 'DELETE',
-    token,
   });
 }
 
 /**
  * Convenience wrapper to get only student users.
  */
-export async function getStudents(token?: string) {
-  return getUsers({ role: 'student', limit: 200 }, token);
+export async function getStudents() {
+  return getUsers({ role: 'student', limit: 200 });
 }
 
 /**
@@ -63,12 +60,10 @@ export async function getStudents(token?: string) {
  */
 export async function createUser(
   data: { name: string; email: string; role: string; phone?: string },
-  token?: string,
 ) {
   const password = crypto.randomUUID().replace(/-/g, '').slice(0, 10) + 'Aa1!';
   return fetchApi<User>(API_ROUTES.USERS, {
     method: 'POST',
     body: JSON.stringify({ ...data, password }),
-    token,
   });
 }

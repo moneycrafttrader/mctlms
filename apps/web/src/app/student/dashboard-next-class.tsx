@@ -2,12 +2,11 @@
 
 import { useState } from 'react';
 import { Video, Calendar, Clock, ExternalLink, Loader2 } from 'lucide-react';
-import { type LiveSession, getSessionJoinUrl } from '@/lib/api/live-sessions';
+import { type LiveSession, getSessionJoinUrl, requestJoinToken } from '@/lib/api/live-sessions';
 import { SessionStatusBadge } from '@/components/shared/SessionStatusBadge';
 
 interface Props {
   session: LiveSession | null;
-  token?: string;
 }
 
 function formatTime(iso: string) {
@@ -25,15 +24,16 @@ function formatDate(iso: string) {
   });
 }
 
-export function DashboardNextClass({ session, token }: Props) {
+export function DashboardNextClass({ session }: Props) {
   const [joining, setJoining] = useState(false);
 
   const handleJoin = async () => {
     if (!session) return;
     setJoining(true);
     try {
-      const url = await getSessionJoinUrl(session.id, token);
-      window.open(url, '_blank');
+      const { token } = await requestJoinToken(session.id);
+      const { joinUrl } = await getSessionJoinUrl(session.id, token);
+      window.open(joinUrl, '_blank');
     } catch {
       // silent
     } finally {

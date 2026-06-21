@@ -9,13 +9,11 @@ import { StudentLedger } from './student-ledger';
 interface PaymentsClientProps {
   students: { id: string; name: string; email: string }[];
   courses: { id: string; name: string }[];
-  token?: string;
 }
 
 export function PaymentsClient({
   students,
   courses,
-  token,
 }: PaymentsClientProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -39,7 +37,7 @@ export function PaymentsClient({
         </button>
       </div>
 
-      <StudentLedger students={students} token={token} />
+      <StudentLedger students={students} />
 
       <Modal
         isOpen={showCreateModal}
@@ -50,7 +48,6 @@ export function PaymentsClient({
           students={students}
           courses={courses}
           onSuccess={() => setShowCreateModal(false)}
-          token={token}
         />
       </Modal>
     </div>

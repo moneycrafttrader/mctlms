@@ -26,13 +26,41 @@ export enum RecordingStatus {
 export enum TestStatus {
   DRAFT = 'draft',
   PUBLISHED = 'published',
+  SCHEDULED = 'scheduled',
+  ACTIVE = 'active',
+  CLOSED = 'closed',
   ARCHIVED = 'archived',
 }
 
 export enum QuestionType {
-  MCQ = 'mcq',
+  SINGLE_CHOICE = 'single_choice',
+  MULTIPLE_CHOICE = 'multiple_choice',
+  TRUE_FALSE = 'true_false',
+  NUMERICAL = 'numerical',
   SHORT_ANSWER = 'short_answer',
   LONG_ANSWER = 'long_answer',
+  IMAGE_UPLOAD = 'image_upload',
+  IMAGE_BASED = 'image_based',
+}
+
+export enum DifficultyLevel {
+  EASY = 'easy',
+  MEDIUM = 'medium',
+  HARD = 'hard',
+}
+
+export enum AttemptStatus {
+  IN_PROGRESS = 'in_progress',
+  SUBMITTED = 'submitted',
+  EVALUATED = 'evaluated',
+  PARTIALLY_EVALUATED = 'partially_evaluated',
+  PUBLISHED = 'published',
+}
+
+export enum ReviewStatus {
+  PENDING = 'pending',
+  IN_REVIEW = 'in_review',
+  REVIEWED = 'reviewed',
 }
 
 export enum UploadQueueStatus {
