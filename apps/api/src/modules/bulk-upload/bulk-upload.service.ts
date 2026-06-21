@@ -195,8 +195,12 @@ export class BulkUploadService {
             }
           }
 
-          // 4e. Send welcome email
-          await this.emailService.sendWelcomeEmail(user.email, user.name);
+          // 4e. Send welcome email — fire-and-forget, never fails the row
+          try {
+            await this.emailService.sendWelcomeEmail(user.email, user.name);
+          } catch (emailErr: any) {
+            this.logger.error(`Welcome email failed for ${user.email}: ${emailErr.message}`);
+          }
 
           results.push({
             rowNumber: user.rowNumber,
@@ -255,6 +259,8 @@ export class BulkUploadService {
         .eq('id', jobId);
 
       throw err;
+    } finally {
+      this.logger.log(`Bulk upload job ${jobId} finished`);
     }
   }
 

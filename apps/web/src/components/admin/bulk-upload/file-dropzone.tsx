@@ -44,11 +44,15 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
         return;
       }
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
       try {
         const formData = new FormData();
         formData.append('file', file);
 
-        const result = await uploadStudentsCsv(formData, token);
+        const result = await uploadStudentsCsv(formData, token, controller.signal);
+        clearTimeout(timeoutId);
         setSummary({
           totalRows: result.totalRows,
           successCount: result.successCount,
@@ -57,11 +61,16 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
           results: result.results || [],
           failures: result.failures || [],
         });
-        onUploadSuccess();
       } catch (err: any) {
-        setError(err.message || 'Upload failed');
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+          setError('Upload timed out. Please refresh to check results.');
+        } else {
+          setError(err.message || 'Upload failed');
+        }
       } finally {
         setIsUploading(false);
+        onUploadSuccess();
       }
     },
     [token, onUploadSuccess],

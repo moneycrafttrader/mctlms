@@ -39,6 +39,7 @@ export async function getBulkUploadJobs(token?: string) {
 export async function uploadStudentsCsv(
   formData: FormData,
   token?: string,
+  signal?: AbortSignal,
 ) {
   return fetchApi<{
     jobId: string;
@@ -53,5 +54,6 @@ export async function uploadStudentsCsv(
     method: 'POST',
     body: formData,
     token,
+    signal,
   });
 }
