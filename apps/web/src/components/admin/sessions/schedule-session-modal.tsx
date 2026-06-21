@@ -45,7 +45,8 @@ export function ScheduleSessionModal({
   const [fetchError, setFetchError] = useState('');
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [durationMinutes, setDurationMinutes] = useState<number>(60);
+  const [durationHours, setDurationHours] = useState(1);
+  const [durationMins, setDurationMins] = useState(0);
 
   const {
     register,
@@ -81,6 +82,8 @@ export function ScheduleSessionModal({
       setSelectedBatchIds(new Set());
       setDropdownOpen(false);
       setFetchError('');
+      setDurationHours(1);
+      setDurationMins(0);
       fetchBatches();
     }
   }, [isOpen, reset, fetchBatches]);
@@ -110,10 +113,11 @@ export function ScheduleSessionModal({
 
     try {
       const startTime = new Date(`${data.startDate}T${data.startTime}`);
+      const totalDurationMinutes = durationHours * 60 + durationMins;
       const payload = {
         title: data.title,
         startTime: startTime.toISOString(),
-        durationMinutes,
+        durationMinutes: totalDurationMinutes,
         batchIds: Array.from(selectedBatchIds),
       };
       console.log('[ScheduleSession] payload:', payload);
@@ -294,15 +298,30 @@ export function ScheduleSessionModal({
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
               Duration
             </label>
-            <select
-              value={durationMinutes}
-              onChange={(e) => setDurationMinutes(Number(e.target.value))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            >
-              <option value={60}>60 mins (1 hr)</option>
-              <option value={120}>120 mins (2 hrs)</option>
-              <option value={180}>180 mins (3 hrs)</option>
-            </select>
+            <div className="grid grid-cols-2 gap-4">
+              <select
+                value={durationHours}
+                onChange={(e) => setDurationHours(Number(e.target.value))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                {Array.from({ length: 8 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    {i + 1} hr{i + 1 > 1 ? 's' : ''}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={durationMins}
+                onChange={(e) => setDurationMins(Number(e.target.value))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                {[0, 15, 30, 45].map((m) => (
+                  <option key={m} value={m}>
+                    {m} min{m > 0 ? 's' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Footer */}
