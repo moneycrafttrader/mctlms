@@ -1,11 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { Calendar, Plus, Loader2, ExternalLink, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleSessionModal } from '@/components/admin/sessions/schedule-session-modal';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import {
   getSessions,
   deleteSession,
@@ -13,11 +11,9 @@ import {
 } from '@/lib/api/sessions';
 
 export default function AdminSessionsPage() {
-  const router = useRouter();
   const [sessions, setSessions] = useState<ScheduledSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [deletingSession, setDeletingSession] = useState<ScheduledSession | null>(null);
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -35,16 +31,14 @@ export default function AdminSessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  const handleDelete = async () => {
-    if (!deletingSession) return;
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this live session from the LMS and Zoom?')) return;
     try {
-      await deleteSession(deletingSession.id);
-      setDeletingSession(null);
-      toast.success('Session cancelled');
+      await deleteSession(id);
+      toast.success('Session deleted');
       fetchSessions();
-      router.refresh();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to cancel session');
+      toast.error(err.message || 'Failed to delete session');
     }
   };
 
@@ -106,7 +100,7 @@ export default function AdminSessionsPage() {
               </h2>
               <SessionTable
                 sessions={upcoming}
-                onDelete={setDeletingSession}
+                onDelete={handleDelete}
                 formatDateTime={formatDateTime}
               />
             </section>
@@ -120,7 +114,7 @@ export default function AdminSessionsPage() {
               </h2>
               <SessionTable
                 sessions={past}
-                onDelete={setDeletingSession}
+                onDelete={handleDelete}
                 formatDateTime={formatDateTime}
               />
             </section>
@@ -133,15 +127,6 @@ export default function AdminSessionsPage() {
         onClose={() => setShowScheduleModal(false)}
         onSuccess={fetchSessions}
       />
-
-      <ConfirmDialog
-        isOpen={!!deletingSession}
-        title="Cancel Session"
-        message={`Are you sure you want to cancel "${deletingSession?.title}"?`}
-        confirmLabel="Cancel Session"
-        onConfirm={handleDelete}
-        onCancel={() => setDeletingSession(null)}
-      />
     </div>
   );
 }
@@ -152,7 +137,7 @@ function SessionTable({
   formatDateTime,
 }: {
   sessions: ScheduledSession[];
-  onDelete: (s: ScheduledSession) => void;
+  onDelete: (id: string) => void;
   formatDateTime: (iso: string) => string;
 }) {
   return (
@@ -225,7 +210,7 @@ function SessionTable({
               </td>
               <td className="px-5 py-4 text-right">
                 <button
-                  onClick={() => onDelete(session)}
+                  onClick={() => onDelete(session.id)}
                   className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
                   title="Cancel session"
                 >
