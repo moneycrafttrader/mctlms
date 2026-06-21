@@ -105,7 +105,8 @@ export class ZoomController {
   /**
    * POST /zoom/webhook
    *
-   * Zoom calls this endpoint when events happen (joins, leaves, recordings).
+   * Zoom calls this endpoint for all events (joins, leaves, recordings).
+   * Always returns 200 OK immediately so Zoom doesn't disable the URL.
    */
   @Public()
   @Post('webhook')
@@ -126,6 +127,15 @@ export class ZoomController {
 
     const event = req.body.event as string;
     const payload = req.body;
+
+    // Log participant joins for attendance tracking
+    if (event === 'webinar.participant_joined') {
+      const participant = payload?.object?.participant;
+      const meetingId = payload?.object?.id;
+      this.logger.log(
+        `Participant joined — email: ${participant?.user_email}, meeting: ${meetingId}`,
+      );
+    }
 
     this.zoomWebhookHandler
       .handle(event, payload, this.supabaseService.client)

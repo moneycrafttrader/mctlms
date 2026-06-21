@@ -190,6 +190,7 @@ export class ZoomService {
       timezone: 'Asia/Kolkata',
       settings: {
         practice_session: false,
+        audio: 'both',
         auto_recording: 'cloud',
         host_video: true,
         panelists_video: true,
