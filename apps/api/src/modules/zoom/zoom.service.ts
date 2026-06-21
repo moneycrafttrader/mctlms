@@ -191,7 +191,7 @@ export class ZoomService {
       timezone: 'Asia/Kolkata',
       settings: {
         practice_session: false,
-        audio: 'both',
+        audio: 'voip',
         auto_recording: 'cloud',
         host_video: true,
         panelists_video: true,
@@ -201,7 +201,7 @@ export class ZoomService {
         allow_attendee_to_record: false,
         include_attendees_in_in_meeting_reports: true,
         question_and_answer: {
-          enable: true,
+          enable: false,
           allow_anonymous_questions: false,
         },
         contact_name: 'LMS Admin',

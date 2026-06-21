@@ -110,6 +110,7 @@ export function ScheduleSessionModal({
       const payload = {
         title: data.title,
         startTime: startTime.toISOString(),
+        durationMinutes: 180,
         batchIds: Array.from(selectedBatchIds),
       };
       console.log('[ScheduleSession] payload:', payload);

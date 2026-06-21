@@ -33,7 +33,7 @@ export class TradingSessionsService {
       webinar = await this.zoomService.createWebinar({
         topic: dto.title,
         startTime: dto.startTime,
-        durationMinutes: 60,
+        durationMinutes: dto.durationMinutes || 180,
       });
       this.logger.log(`Zoom webinar created: ID=${webinar.webinarId}, joinUrl=${webinar.joinUrl}`);
     } catch (err: any) {
