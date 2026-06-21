@@ -6,19 +6,16 @@ import {
   Post,
   Body,
   Req,
+  HttpCode,
   UnauthorizedException,
   ForbiddenException,
   NotFoundException,
   Logger,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
-import * as crypto from 'crypto';
 import { ZoomService } from './zoom.service';
-import { ZoomWebhookHandler } from './zoom-webhook.handler';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
-import { Public } from '../../common/decorators/public.decorator';
 import { CreateSignatureDto } from './dto/create-signature.dto';
 
 @Controller('zoom')
@@ -27,9 +24,7 @@ export class ZoomController {
 
   constructor(
     private readonly zoomService: ZoomService,
-    private readonly zoomWebhookHandler: ZoomWebhookHandler,
     private readonly supabaseService: SupabaseService,
-    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -105,60 +100,16 @@ export class ZoomController {
     };
   }
 
-  /**
-   * POST /zoom/webhook
-   *
-   * Zoom calls this endpoint for all events (joins, leaves, recordings).
-   * Always returns 200 OK immediately so Zoom doesn't disable the URL.
-   */
-  @Public()
   @Post('webhook')
-  async handleWebhook(@Req() req: Request) {
-    // ── endpoint.url_validation (Zoom dashboard URL challenge) ──
-    // Zoom sends this once when setting up the webhook URL in the
-    // Marketplace dashboard.  It carries no standard signature headers.
-    const eventType = req.body?.event as string;
-    if (eventType === 'endpoint.url_validation') {
-      const plainToken = req.body?.payload?.plainToken as string;
-      const secret = this.configService.get<string>('ZOOM_WEBHOOK_SECRET') ?? '';
-      const hash = crypto
-        .createHmac('sha256', secret)
-        .update(plainToken)
-        .digest('hex');
-      return { plainToken, encryptedToken: hash };
+  @HttpCode(200)
+  handleZoomWebhook(@Body() body: any) {
+    console.log('--- ZOOM WEBHOOK RECEIVED ---', JSON.stringify(body, null, 2));
+
+    if (body?.event === 'endpoint.url_validation') {
+      return this.zoomService.validateWebhookChallenge(body.payload.plainToken);
     }
 
-    const signature =
-      (req.headers['x-zm-signature'] as string) || '';
-    const timestamp =
-      (req.headers['x-zm-request-timestamp'] as string) || '';
-
-    const rawBody = JSON.stringify(req.body);
-
-    try {
-      this.zoomService.verifyWebhookSignature(rawBody, signature, timestamp);
-    } catch {
-      this.logger.warn('Zoom webhook signature verification failed');
-      return { message: 'ok' };
-    }
-
-    const payload = req.body;
-
-    // Log participant joins for attendance tracking
-    if (eventType === 'webinar.participant_joined') {
-      const participant = payload?.object?.participant;
-      const meetingId = payload?.object?.id;
-      this.logger.log(
-        `Participant joined — email: ${participant?.user_email}, meeting: ${meetingId}`,
-      );
-    }
-
-    this.zoomWebhookHandler
-      .handle(eventType, payload, this.supabaseService.client)
-      .catch((err) =>
-        this.logger.error(`Webhook handler error: ${err.message}`),
-      );
-
-    return { message: 'ok' };
+    // Handle attendance logic here later
+    return { success: true };
   }
 }

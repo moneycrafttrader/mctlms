@@ -18,6 +18,7 @@
 import {
   Injectable,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -351,5 +352,23 @@ export class ZoomService {
     if (!valid) {
       throw new BadRequestException('Invalid webhook signature');
     }
+  }
+
+  validateWebhookChallenge(plainToken: string) {
+    const secret = this.configService.get<string>('ZOOM_WEBHOOK_SECRET');
+    if (!secret) {
+      console.error('CRITICAL: ZOOM_WEBHOOK_SECRET is missing from environment variables');
+      throw new InternalServerErrorException('Webhook secret missing');
+    }
+
+    const hash = crypto
+      .createHmac('sha256', secret)
+      .update(plainToken)
+      .digest('hex');
+
+    return {
+      plainToken: plainToken,
+      encryptedToken: hash,
+    };
   }
 }
