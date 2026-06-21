@@ -23,7 +23,8 @@ export class BulkUploadController {
   @Public()
   @Get('template')
   downloadTemplate(@Res() res: Response) {
-    const csvContent = 'name,email,phone,courseName,batchName\nJohn,Doe,john@example.com,1234567890,Morning Batch';
+    // courseName and batchName are optional — leave blank if assigning batch later via UI
+    const csvContent = 'name,email,phone,courseName,batchName\nJohn Doe,john@example.com,9876543210,Dhanlabh With Shubh,12 PM - 2 PM';
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="student_upload_template.csv"');
     res.status(200).send(csvContent);

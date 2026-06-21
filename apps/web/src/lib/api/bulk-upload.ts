@@ -1,6 +1,15 @@
 import { fetchApi } from '@/lib/api-client';
 import { API_ROUTES } from '@/lib/constants';
 
+export interface RowResult {
+  rowNumber: number;
+  email: string;
+  status: 'success' | 'failure';
+  error?: string;
+  warning?: string;
+  batchAssigned?: boolean;
+}
+
 export interface BulkUploadJob {
   id: string;
   job_type: string;
@@ -11,6 +20,7 @@ export interface BulkUploadJob {
   failure_count: number;
   status: 'processing' | 'completed' | 'failed';
   failures: { email: string; error: string }[];
+  results: RowResult[];
   created_at: string;
   completed_at?: string;
 }
@@ -36,6 +46,8 @@ export async function uploadStudentsCsv(
     totalRows: number;
     successCount: number;
     failureCount: number;
+    warningCount: number;
+    results: RowResult[];
     failures: { email: string; error: string }[];
   }  >(`${API_ROUTES.BULK_UPLOAD}/students`, {
     method: 'POST',

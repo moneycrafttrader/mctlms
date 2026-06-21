@@ -8,9 +8,10 @@ export interface ParsedUser {
   phone?: string;
   courseName?: string;
   batchName?: string;
+  rowNumber: number;
 }
 
-function normalizeRow(row: Record<string, any>): ParsedUser | null {
+function normalizeRow(row: Record<string, any>, rowIndex: number): ParsedUser | null {
   const nameKey = Object.keys(row).find(
     (k) => k.toLowerCase().replace(/[\s_-]/g, '') === 'fullname' || k.toLowerCase().trim() === 'name',
   );
@@ -47,6 +48,7 @@ function normalizeRow(row: Record<string, any>): ParsedUser | null {
     phone: phone || undefined,
     courseName: courseName || undefined,
     batchName: batchName || undefined,
+    rowNumber: rowIndex + 1,
   };
 }
 
@@ -83,8 +85,8 @@ export function parseUsersFile(
 
   const users: ParsedUser[] = [];
 
-  for (const row of rows) {
-    const normalized = normalizeRow(row);
+  for (let i = 0; i < rows.length; i++) {
+    const normalized = normalizeRow(rows[i], i);
     if (normalized) {
       users.push(normalized);
     }

@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, XCircle } from 'lucide-react';
-import { uploadStudentsCsv } from '@/lib/api/bulk-upload';
+import { Upload, FileSpreadsheet, CheckCircle, XCircle, AlertTriangle, Download, AlertCircle } from 'lucide-react';
+import { uploadStudentsCsv, type RowResult } from '@/lib/api/bulk-upload';
+import { API_ROUTES } from '@/lib/constants';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface FileDropzoneProps {
   onUploadSuccess: () => void;
@@ -18,6 +21,9 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
     totalRows: number;
     successCount: number;
     failureCount: number;
+    warningCount: number;
+    results: RowResult[];
+    failures: { email: string; error: string }[];
   } | null>(null);
 
   const handleUpload = useCallback(
@@ -47,6 +53,9 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
           totalRows: result.totalRows,
           successCount: result.successCount,
           failureCount: result.failureCount,
+          warningCount: result.warningCount,
+          results: result.results || [],
+          failures: result.failures || [],
         });
         onUploadSuccess();
       } catch (err: any) {
@@ -79,10 +88,23 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">Upload Students</h2>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">Upload Students</h2>
+        <a
+          href={`${API_URL}${API_ROUTES.BULK_UPLOAD}/template`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+        >
+          <Download className="h-4 w-4" />
+          Download Template
+        </a>
+      </div>
       <p className="mb-4 text-sm text-gray-500">
-        Upload a CSV or Excel file with columns: <strong>Name</strong>,{' '}
-        <strong>Email</strong>, <strong>Phone</strong> (optional).
+        Upload a CSV or Excel file with columns:{' '}
+        <strong>Name</strong> (full name), <strong>Email</strong>,{' '}
+        <strong>Phone</strong> (optional),{' '}
+        <strong>Course Name</strong> (optional),{' '}
+        <strong>Batch Name</strong> (optional).{' '}
+        Leave Course Name and Batch Name blank if assigning batch later via UI.
       </p>
 
       <div
@@ -138,24 +160,73 @@ export function FileDropzone({ onUploadSuccess, token }: FileDropzoneProps) {
             <CheckCircle className="h-4 w-4 text-green-600" />
             Upload complete
           </div>
-          <div className="grid grid-cols-3 gap-4 text-center text-sm">
+          <div className="grid grid-cols-4 gap-4 text-center text-sm">
             <div>
               <p className="text-lg font-bold text-gray-900">{summary.totalRows}</p>
               <p className="text-xs text-gray-500">Total Rows</p>
             </div>
             <div>
               <p className="text-lg font-bold text-green-600">
-                {summary.successCount}
+                {summary.successCount - summary.warningCount}
               </p>
-              <p className="text-xs text-gray-500">Success</p>
+              <p className="text-xs text-gray-500">Created</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-amber-600">
+                {summary.warningCount}
+              </p>
+              <p className="text-xs text-gray-500">Warnings</p>
             </div>
             <div>
               <p className="text-lg font-bold text-red-600">
                 {summary.failureCount}
               </p>
-              <p className="text-xs text-gray-500">Failures</p>
+              <p className="text-xs text-gray-500">Failed</p>
             </div>
           </div>
+
+          {summary.results.length > 0 && (
+            <div className="mt-4 space-y-2 border-t border-gray-200 pt-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                Row Details
+              </p>
+              {summary.results.map((r, i) => {
+                if (r.status === 'failure') {
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 p-2.5 text-sm"
+                    >
+                      <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
+                      <div>
+                        <p className="font-medium text-red-800">
+                          Row {r.rowNumber} ({r.email})
+                        </p>
+                        <p className="text-red-600">{r.error}</p>
+                      </div>
+                    </div>
+                  );
+                }
+                if (r.warning) {
+                  return (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-sm"
+                    >
+                      <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
+                      <div>
+                        <p className="font-medium text-amber-800">
+                          Row {r.rowNumber} ({r.email})
+                        </p>
+                        <p className="text-amber-600">{r.warning}</p>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
