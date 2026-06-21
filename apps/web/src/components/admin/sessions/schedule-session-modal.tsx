@@ -107,14 +107,13 @@ export function ScheduleSessionModal({
 
     try {
       const startTime = new Date(`${data.startDate}T${data.startTime}`);
-      await scheduleSession(
-        {
-          title: data.title,
-          startTime: startTime.toISOString(),
-          batchIds: Array.from(selectedBatchIds),
-        },
-        token,
-      );
+      const payload = {
+        title: data.title,
+        startTime: startTime.toISOString(),
+        batchIds: Array.from(selectedBatchIds),
+      };
+      console.log('[ScheduleSession] payload:', payload);
+      await scheduleSession(payload, token);
       toast.success('Class scheduled successfully');
       onClose();
       router.refresh();

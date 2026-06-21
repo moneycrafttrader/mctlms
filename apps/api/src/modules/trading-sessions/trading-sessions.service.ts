@@ -18,6 +18,13 @@ export class TradingSessionsService {
   ) {}
 
   async create(dto: CreateTradingSessionDto) {
+    if (!dto.startTime) {
+      throw new BadRequestException('startTime is required');
+    }
+    if (!dto.batchIds || dto.batchIds.length === 0) {
+      throw new BadRequestException('At least one batch must be selected');
+    }
+
     this.logger.log(`Creating session "${dto.title}" for batches [${dto.batchIds.join(', ')}]`);
 
     // ── 1. Create Zoom webinar ─────────────────────────────────
@@ -62,10 +69,9 @@ export class TradingSessionsService {
       batch_id: batchId,
     }));
 
-    const { error: mapError, count: mapCount } = await this.supabaseService.client
+    const { error: mapError } = await this.supabaseService.client
       .from(TABLES.SESSION_BATCH_MAPPINGS)
-      .insert(mappings)
-      .select('', { count: 'exact' });
+      .insert(mappings);
 
     if (mapError) {
       this.logger.error(`Failed to link batches: ${mapError.message}`, mapError);

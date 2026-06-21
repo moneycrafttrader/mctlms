@@ -24,8 +24,8 @@ export default function AdminSessionsPage() {
     try {
       const data = await getSessions();
       setSessions(data);
-    } catch {
-      // silent
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to load sessions');
     } finally {
       setLoading(false);
     }
