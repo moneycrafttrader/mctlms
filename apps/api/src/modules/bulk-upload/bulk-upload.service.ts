@@ -244,7 +244,7 @@ export class BulkUploadService {
 
       // Send welcome email — truly fire-and-forget, not awaited
       this.emailService
-        .sendWelcomeEmail(user.email, user.name)
+        .sendWelcomeEmail(user.email, user.name, password)
         .catch((emailErr: any) =>
           this.logger.warn(`Welcome email failed for ${user.email}: ${emailErr.message}`),
         );

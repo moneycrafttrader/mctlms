@@ -346,16 +346,17 @@ export class BatchesService {
       .maybeSingle();
 
     let userId: string;
+    let tempPassword: string | undefined;
 
     if (existing) {
       userId = existing.id;
     } else {
       // 2. Create auth user with a temporary password
-      const password = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+      tempPassword = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
       const { data: authData, error: authError } =
         await supabase.auth.admin.createUser({
           email: dto.email,
-          password,
+          password: tempPassword,
           email_confirm: true,
           user_metadata: { name },
         });
@@ -401,14 +402,16 @@ export class BatchesService {
       throw new BadRequestException('Failed to enroll student in batch');
     }
 
-    // Fire-and-forget welcome email — failure must NOT block enrollment
-    try {
-      await this.emailService.sendWelcomeEmail(dto.email, name);
-    } catch (emailErr: any) {
-      this.logger.error(
-        `Welcome email failed for ${dto.email} in batch ${batchId}: ${emailErr.message}`,
-        emailErr.stack,
-      );
+    // Fire-and-forget welcome email — only for newly created users
+    if (tempPassword) {
+      try {
+        await this.emailService.sendWelcomeEmail(dto.email, name, tempPassword);
+      } catch (emailErr: any) {
+        this.logger.error(
+          `Welcome email failed for ${dto.email} in batch ${batchId}: ${emailErr.message}`,
+          emailErr.stack,
+        );
+      }
     }
 
     return {

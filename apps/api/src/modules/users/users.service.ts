@@ -185,7 +185,7 @@ export class UsersService {
 
     // Fire-and-forget welcome email — failure must NOT block user creation
     try {
-      await this.emailService.sendWelcomeEmail(dto.email, dto.name);
+      await this.emailService.sendWelcomeEmail(dto.email, dto.name, dto.password);
     } catch (emailErr: any) {
       this.logger.error(
         `Welcome email failed for ${dto.email}: ${emailErr.message}`,
