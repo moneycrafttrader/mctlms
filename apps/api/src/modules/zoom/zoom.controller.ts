@@ -6,13 +6,13 @@ import {
   Post,
   Body,
   Req,
-  HttpCode,
+  Res,
   UnauthorizedException,
   ForbiddenException,
   NotFoundException,
   Logger,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { ZoomService } from './zoom.service';
 import { SupabaseService } from '../../common/services/supabase.service';
@@ -103,15 +103,15 @@ export class ZoomController {
 
   @Public()
   @Post('webhook')
-  @HttpCode(200)
-  handleZoomWebhook(@Body() body: any) {
+  handleZoomWebhook(@Body() body: any, @Res() res: Response) {
     console.log('--- ZOOM WEBHOOK RECEIVED ---', JSON.stringify(body, null, 2));
 
     if (body?.event === 'endpoint.url_validation') {
-      return this.zoomService.validateWebhookChallenge(body.payload.plainToken);
+      const validationResponse = this.zoomService.validateWebhookChallenge(body.payload.plainToken);
+      return res.status(200).json(validationResponse);
     }
 
-    // Handle attendance logic here later
-    return { success: true };
+    // Handle other events (like attendance) here
+    return res.status(200).json({ success: true });
   }
 }
