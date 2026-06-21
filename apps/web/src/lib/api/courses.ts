@@ -214,6 +214,25 @@ export async function getBatchStudents(
 }
 
 /**
+ * Remove students from a batch.
+ * DELETE /batches/:batchId/students  { studentIds: string[] }
+ */
+export async function removeStudentsFromBatch(
+  batchId: string,
+  studentIds: string[],
+  token?: string,
+) {
+  return fetchApi<{ removedCount: number }>(
+    `${API_ROUTES.BATCHES}/${batchId}/students`,
+    {
+      method: 'DELETE',
+      body: JSON.stringify({ studentIds }),
+      token,
+    },
+  );
+}
+
+/**
  * Update a batch's name and/or schedule type.
  * PATCH /batches/:id
  */

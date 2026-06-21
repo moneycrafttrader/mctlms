@@ -400,6 +400,11 @@ export function StudentsPageClient({
       <AssignBatchModal
         isOpen={showAssignModal}
         studentIds={assignTargets}
+        currentBatches={
+          assignTargets.length === 1
+            ? students.find((s) => s.id === assignTargets[0])?.batches ?? []
+            : []
+        }
         studentLabel={
           assignTargets.length === 1
             ? `${students.find((s) => s.id === assignTargets[0])?.name ?? ''}`
