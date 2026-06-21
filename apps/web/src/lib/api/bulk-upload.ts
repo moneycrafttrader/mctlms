@@ -37,10 +37,9 @@ export async function uploadStudentsCsv(
     successCount: number;
     failureCount: number;
     failures: { email: string; error: string }[];
-  }>(`${API_ROUTES.BULK_UPLOAD}/students`, {
+  }  >(`${API_ROUTES.BULK_UPLOAD}/students`, {
     method: 'POST',
     body: formData,
     token,
-    headers: {}, // let fetch set multipart boundary automatically
   });
 }
