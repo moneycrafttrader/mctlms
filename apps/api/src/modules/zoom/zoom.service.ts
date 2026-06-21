@@ -218,6 +218,21 @@ export class ZoomService {
   }
 
   // ──────────────────────────────────────────────────────────────
+  //  deleteWebinar
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Cancel/delete a Zoom webinar.
+   *
+   * Calls DELETE /webinars/{webinarId} using the server-to-server OAuth token.
+   * Zoom will cancel the webinar and prevent anyone from joining.
+   */
+  async deleteWebinar(webinarId: string): Promise<void> {
+    await this.zoomRequest('DELETE', `/webinars/${webinarId}`);
+    this.logger.log(`Zoom webinar ${webinarId} deleted`);
+  }
+
+  // ──────────────────────────────────────────────────────────────
   //  registerAttendee
   // ──────────────────────────────────────────────────────────────
 

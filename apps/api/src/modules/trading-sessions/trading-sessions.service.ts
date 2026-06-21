@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  NotFoundException,
   Logger,
 } from '@nestjs/common';
 import { SupabaseService } from '../../common/services/supabase.service';
@@ -139,17 +140,48 @@ export class TradingSessionsService {
     }));
   }
 
-  async remove(id: string): Promise<{ deleted: boolean }> {
-    const { error } = await this.supabaseService.client
+  async remove(id: string): Promise<{ success: boolean; deletedId: string }> {
+    // ── 1. Fetch session to get zoom_meeting_id ────────────────
+    const { data: session, error: fetchError } = await this.supabaseService.client
+      .from(TABLES.SESSIONS)
+      .select('zoom_meeting_id')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !session) {
+      throw new NotFoundException(`Session ${id} not found`);
+    }
+
+    // ── 2. Cancel the Zoom webinar (best-effort) ───────────────
+    try {
+      await this.zoomService.deleteWebinar(session.zoom_meeting_id);
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to delete Zoom webinar ${session.zoom_meeting_id}: ${err.message}. Proceeding with DB cleanup.`,
+      );
+    }
+
+    // ── 3. Remove junction rows (session_batch_mappings) ───────
+    const { error: mapError } = await this.supabaseService.client
+      .from(TABLES.SESSION_BATCH_MAPPINGS)
+      .delete()
+      .eq('session_id', id);
+
+    if (mapError) {
+      this.logger.error(`Failed to delete mappings for session ${id}: ${mapError.message}`);
+    }
+
+    // ── 4. Delete the session record ───────────────────────────
+    const { error: deleteError } = await this.supabaseService.client
       .from(TABLES.SESSIONS)
       .delete()
       .eq('id', id);
 
-    if (error) {
-      this.logger.error(`Failed to delete session ${id}: ${error.message}`);
+    if (deleteError) {
+      this.logger.error(`Failed to delete session ${id}: ${deleteError.message}`);
       throw new BadRequestException('Failed to delete session');
     }
 
-    return { deleted: true };
+    return { success: true, deletedId: id };
   }
 }
