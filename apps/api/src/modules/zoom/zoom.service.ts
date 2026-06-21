@@ -161,11 +161,26 @@ export class ZoomService {
    *   2. Return the webinar ID, join URL, and host start URL
    */
   async createWebinar(dto: CreateWebinarDto): Promise<ZoomWebinarResult> {
-    // The frontend always sends startTime as a UTC ISO-8601 string
-    // (e.g. new Date(...).toISOString()). We pass it through unchanged
-    // so Zoom interprets it as UTC — the timezone field below tells
-    // Zoom which local time to display the webinar in.
-    const startTime = dto.startTime;
+    // ── Timezone conversion ──────────────────────────────────────
+    // The frontend sends startTime as a UTC ISO-8601 string
+    // (e.g. "2026-07-15T14:30:00.000Z" which is 8:00 PM IST).
+    //
+    // Zoom bug: when timezone='Asia/Kolkata' is set, Zoom interprets
+    // the local-time portion as IST instead of UTC — so 14:30 would
+    // become 2:30 PM IST instead of 8:00 PM IST.
+    //
+    // Fix: strip the UTC offset, add 330 min (IST offset), and
+    // format as YYYY-MM-DDTHH:mm:ss (no timezone suffix).  Zoom
+    // then treats the value as Asia/Kolkata local time.
+    const utcDate = new Date(dto.startTime);
+    const istDate = new Date(utcDate.getTime() + 330 * 60_000);
+    const yyyy = istDate.getUTCFullYear();
+    const mm = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(istDate.getUTCDate()).padStart(2, '0');
+    const hh = String(istDate.getUTCHours()).padStart(2, '0');
+    const min = String(istDate.getUTCMinutes()).padStart(2, '0');
+    const ss = String(istDate.getUTCSeconds()).padStart(2, '0');
+    const startTime = `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`;
 
     const data = await this.zoomRequest('POST', '/users/me/webinars', {
       topic: dto.topic,
@@ -174,11 +189,12 @@ export class ZoomService {
       duration: dto.durationMinutes,
       timezone: 'Asia/Kolkata',
       settings: {
+        practice_session: false,
+        auto_recording: 'cloud',
         host_video: true,
         panelists_video: true,
-        auto_recording: 'cloud',
+        allow_multiple_devices: false,
         approval_type: 0,
-        practice_session: true,
         registrants_email_notification: true,
         allow_attendee_to_record: false,
         include_attendees_in_in_meeting_reports: true,
@@ -186,7 +202,6 @@ export class ZoomService {
           enable: true,
           allow_anonymous_questions: false,
         },
-        allow_multiple_devices: false,
         contact_name: 'LMS Admin',
         show_share_button: false,
         allow_attendees_to_chat: 'host_and_panelists',
