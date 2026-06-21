@@ -11,6 +11,7 @@ import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { BulkUploadService } from './bulk-upload.service';
 import { UploadStudentsDto } from './dto/upload-students.dto';
+import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@lms/shared-types';
@@ -19,8 +20,8 @@ import { UserRole } from '@lms/shared-types';
 export class BulkUploadController {
   constructor(private readonly bulkUploadService: BulkUploadService) {}
 
+  @Public()
   @Get('template')
-  @Roles(UserRole.ADMIN)
   downloadTemplate(@Res() res: Response) {
     const csvContent = 'name,email,phone,courseName,batchName\nJohn,Doe,john@example.com,1234567890,Morning Batch';
     res.setHeader('Content-Type', 'text/csv');

@@ -20,7 +20,6 @@ import {
   createUser,
   deleteUser,
 } from '@/lib/api/users';
-import { toast } from 'sonner';
 import { FileDropzone } from '@/components/admin/bulk-upload/file-dropzone';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { AssignBatchModal } from './assign-batch-modal';
@@ -150,31 +149,9 @@ export function StudentsPageClient({
 
   const hasSelection = selectedIds.size > 0;
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-  const downloadTemplate = async () => {
-    try {
-      const response = await fetch(`${API_URL}/bulk-upload/template`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) throw new Error('Failed to download template');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'student_upload_template.csv';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Failed to download template');
-    }
+  const downloadTemplate = () => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    window.location.href = `${apiUrl}/bulk-upload/template`;
   };
 
   return (
