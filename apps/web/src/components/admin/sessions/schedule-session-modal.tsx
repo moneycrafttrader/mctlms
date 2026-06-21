@@ -20,6 +20,7 @@ import { scheduleSession } from '@/lib/api/sessions';
 interface ScheduleSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: () => void;
   token?: string;
 }
 
@@ -35,6 +36,7 @@ type FormValues = z.infer<typeof formSchema>;
 export function ScheduleSessionModal({
   isOpen,
   onClose,
+  onSuccess,
   token,
 }: ScheduleSessionModalProps) {
   const router = useRouter();
@@ -43,6 +45,7 @@ export function ScheduleSessionModal({
   const [fetchError, setFetchError] = useState('');
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [durationMinutes, setDurationMinutes] = useState<number>(60);
 
   const {
     register,
@@ -110,14 +113,14 @@ export function ScheduleSessionModal({
       const payload = {
         title: data.title,
         startTime: startTime.toISOString(),
-        durationMinutes: 180,
+        durationMinutes,
         batchIds: Array.from(selectedBatchIds),
       };
       console.log('[ScheduleSession] payload:', payload);
       await scheduleSession(payload, token);
       toast.success('Class scheduled successfully');
+      onSuccess?.();
       onClose();
-      router.refresh();
     } catch (err: any) {
       toast.error(err.message || 'Failed to schedule class');
     }
@@ -289,15 +292,17 @@ export function ScheduleSessionModal({
           {/* Duration */}
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Duration (minutes)
+              Duration
             </label>
-            <input
-              type="number"
-              {...register('duration')}
-              min={15}
-              max={480}
+            <select
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(Number(e.target.value))}
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            />
+            >
+              <option value={60}>60 mins (1 hr)</option>
+              <option value={120}>120 mins (2 hrs)</option>
+              <option value={180}>180 mins (3 hrs)</option>
+            </select>
           </div>
 
           {/* Footer */}

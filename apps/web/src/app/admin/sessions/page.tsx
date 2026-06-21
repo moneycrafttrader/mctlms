@@ -131,6 +131,7 @@ export default function AdminSessionsPage() {
       <ScheduleSessionModal
         isOpen={showScheduleModal}
         onClose={() => setShowScheduleModal(false)}
+        onSuccess={fetchSessions}
       />
 
       <ConfirmDialog
