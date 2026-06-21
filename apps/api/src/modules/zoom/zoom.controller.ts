@@ -13,6 +13,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { Public } from '../../common/decorators/public.decorator';
 import { ZoomService } from './zoom.service';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
@@ -100,6 +101,7 @@ export class ZoomController {
     };
   }
 
+  @Public()
   @Post('webhook')
   @HttpCode(200)
   handleZoomWebhook(@Body() body: any) {
