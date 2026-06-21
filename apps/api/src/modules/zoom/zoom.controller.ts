@@ -11,7 +11,9 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import * as crypto from 'crypto';
 import { ZoomService } from './zoom.service';
 import { ZoomWebhookHandler } from './zoom-webhook.handler';
 import { SupabaseService } from '../../common/services/supabase.service';
@@ -27,6 +29,7 @@ export class ZoomController {
     private readonly zoomService: ZoomService,
     private readonly zoomWebhookHandler: ZoomWebhookHandler,
     private readonly supabaseService: SupabaseService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -111,6 +114,20 @@ export class ZoomController {
   @Public()
   @Post('webhook')
   async handleWebhook(@Req() req: Request) {
+    // ── endpoint.url_validation (Zoom dashboard URL challenge) ──
+    // Zoom sends this once when setting up the webhook URL in the
+    // Marketplace dashboard.  It carries no standard signature headers.
+    const eventType = req.body?.event as string;
+    if (eventType === 'endpoint.url_validation') {
+      const plainToken = req.body?.payload?.plainToken as string;
+      const secret = this.configService.get<string>('ZOOM_WEBHOOK_SECRET') ?? '';
+      const hash = crypto
+        .createHmac('sha256', secret)
+        .update(plainToken)
+        .digest('hex');
+      return { plainToken, encryptedToken: hash };
+    }
+
     const signature =
       (req.headers['x-zm-signature'] as string) || '';
     const timestamp =
@@ -125,11 +142,10 @@ export class ZoomController {
       return { message: 'ok' };
     }
 
-    const event = req.body.event as string;
     const payload = req.body;
 
     // Log participant joins for attendance tracking
-    if (event === 'webinar.participant_joined') {
+    if (eventType === 'webinar.participant_joined') {
       const participant = payload?.object?.participant;
       const meetingId = payload?.object?.id;
       this.logger.log(
@@ -138,7 +154,7 @@ export class ZoomController {
     }
 
     this.zoomWebhookHandler
-      .handle(event, payload, this.supabaseService.client)
+      .handle(eventType, payload, this.supabaseService.client)
       .catch((err) =>
         this.logger.error(`Webhook handler error: ${err.message}`),
       );
