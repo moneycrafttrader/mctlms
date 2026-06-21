@@ -20,6 +20,7 @@ import {
   createUser,
   deleteUser,
 } from '@/lib/api/users';
+import { toast } from 'sonner';
 import { FileDropzone } from '@/components/admin/bulk-upload/file-dropzone';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { AssignBatchModal } from './assign-batch-modal';
@@ -148,6 +149,33 @@ export function StudentsPageClient({
     : students;
 
   const hasSelection = selectedIds.size > 0;
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+  const downloadTemplate = async () => {
+    try {
+      const response = await fetch(`${API_URL}/bulk-upload/template`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to download template');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'student_upload_template.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download template');
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -389,16 +417,15 @@ export function StudentsPageClient({
                     <p className="text-xs text-gray-500">
                       Upload a CSV or Excel file with student details.
                     </p>
-                    <a
-                      href="/student-template.csv"
-                      download
+                    <button
+                      onClick={downloadTemplate}
                       className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
                     >
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                       </svg>
                       Download Template
-                    </a>
+                    </button>
                   </div>
                   <FileDropzone onUploadSuccess={refresh} token={token} />
                 </>
