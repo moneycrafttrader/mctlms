@@ -378,6 +378,7 @@ export class BatchesService {
           phone: dto.phone ?? null,
           role: UserRole.STUDENT,
           is_active: true,
+          must_change_password: true,
         });
 
       if (profileError) {
@@ -404,14 +405,13 @@ export class BatchesService {
 
     // Fire-and-forget welcome email — only for newly created users
     if (tempPassword) {
-      try {
-        await this.emailService.sendWelcomeEmail(dto.email, name, tempPassword);
-      } catch (emailErr: any) {
-        this.logger.error(
-          `Welcome email failed for ${dto.email} in batch ${batchId}: ${emailErr.message}`,
-          emailErr.stack,
+      this.emailService
+        .sendWelcomeEmail(dto.email, name, tempPassword)
+        .catch((emailErr: any) =>
+          this.logger.warn(
+            `Welcome email failed for ${dto.email} in batch ${batchId}: ${emailErr.message}`,
+          ),
         );
-      }
     }
 
     return {

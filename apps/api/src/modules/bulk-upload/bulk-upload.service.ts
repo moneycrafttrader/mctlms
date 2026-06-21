@@ -153,6 +153,7 @@ export class BulkUploadService {
         });
 
       let userId: string;
+      let isNewUser = false;
 
       if (authError) {
         const msg = authError.message.toLowerCase();
@@ -179,6 +180,7 @@ export class BulkUploadService {
         }
       } else {
         userId = authData.user.id;
+        isNewUser = true;
       }
 
       // Upsert profile
@@ -192,6 +194,7 @@ export class BulkUploadService {
             phone: user.phone ?? null,
             role: UserRole.STUDENT,
             is_active: true,
+            must_change_password: isNewUser ? true : undefined,
           },
           { onConflict: 'id' },
         );

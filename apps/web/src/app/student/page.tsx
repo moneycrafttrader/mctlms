@@ -1,10 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
 import { getMyCourses, type StudentCourse } from '@/lib/api/courses';
 import { getMySessions, type LiveSession } from '@/lib/api/live-sessions';
-import { getMyPaymentPlans, type PaymentPlan } from '@/lib/api/payments';
-import { EnrolledCoursesGrid } from '@/components/student/dashboard/enrolled-courses-grid';
-import { PendingPaymentsWidget } from '@/components/student/dashboard/pending-payments-widget';
-import { NextSessionCard } from '@/components/student/dashboard/next-session-card';
+import { getMyVideos, type StudentVideo } from '@/lib/api/videos';
+import { DashboardGreeting } from './dashboard-greeting';
+import { DashboardNextClass } from './dashboard-next-class';
+import { DashboardUpcomingList } from './dashboard-upcoming-list';
+import { DashboardRecentRecordings } from './dashboard-recent-recordings';
+import { DashboardCourses } from './dashboard-courses';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,41 +18,41 @@ export default async function StudentDashboardPage() {
   const token = session?.access_token;
 
   let courses: StudentCourse[] = [];
-  let sessions: LiveSession[] = [];
-  let paymentPlans: PaymentPlan[] = [];
+  let upcoming: LiveSession[] = [];
+  let past: (LiveSession & { attendanceStatus?: string })[] = [];
+  let recordings: StudentVideo[] = [];
 
   try {
-    const [coursesResult, sessionsResult, plansResult] = await Promise.all([
+    const [coursesResult, sessionsResult, recordingsResult] = await Promise.all([
       getMyCourses(token),
       getMySessions(token),
-      getMyPaymentPlans(token),
+      getMyVideos(undefined, token),
     ]);
     courses = coursesResult;
-    sessions = [...(sessionsResult.upcoming ?? []), ...(sessionsResult.past ?? [])];
-    paymentPlans = plansResult;
+    upcoming = sessionsResult.upcoming ?? [];
+    past = sessionsResult.past ?? [];
+    recordings = recordingsResult;
   } catch {
-    // API unavailable — render empty state
+    // API unavailable
   }
 
+  const nextClass = upcoming.length > 0
+    ? upcoming.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())[0]
+    : null;
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Student Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Welcome back! Here is your learning overview.
-        </p>
-      </div>
+    <div className="space-y-6 px-4 py-4 md:px-0 md:py-0">
+      <DashboardGreeting />
 
-      <NextSessionCard sessions={sessions} token={token} />
+      <DashboardNextClass session={nextClass} token={token} />
 
-      <PendingPaymentsWidget plans={paymentPlans} />
+      {upcoming.length > 1 && (
+        <DashboardUpcomingList sessions={upcoming.slice(1)} token={token} />
+      )}
 
-      <section>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          My Courses
-        </h2>
-        <EnrolledCoursesGrid courses={courses} />
-      </section>
+      <DashboardRecentRecordings recordings={recordings} token={token} />
+
+      <DashboardCourses courses={courses} />
     </div>
   );
 }

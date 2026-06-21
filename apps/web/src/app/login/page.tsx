@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchApi, ApiError } from '@/lib/api-client';
 import { ROUTES, API_ROUTES } from '@/lib/constants';
+import { setMustChangePassword } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +12,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Forgot password state
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,14 +32,17 @@ export default function LoginPage() {
 
       const { token, user } = result;
 
-      // The backend also sets an httpOnly cookie on its own domain
-      // (onrender.com), but the Next.js middleware runs on Vercel and
-      // can't read cross-domain cookies. We manually set the cookie
-      // on the current (Vercel) domain so the middleware finds it.
       document.cookie =
         'access_token=' + token + '; path=/; max-age=86400; secure; samesite=lax';
+      document.cookie =
+        'must_change_password=' + (user.mustChangePassword ? 'true' : 'false') +
+        '; path=/; max-age=86400; secure; samesite=lax';
 
-      if (user.role === 'student') {
+      setMustChangePassword(user.mustChangePassword);
+
+      if (user.mustChangePassword) {
+        router.push(ROUTES.CHANGE_PASSWORD);
+      } else if (user.role === 'student') {
         router.push(ROUTES.STUDENT.HOME);
       } else {
         router.push(ROUTES.ADMIN.HOME);
@@ -48,6 +58,22 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetLoading(true);
+    try {
+      await fetchApi(API_ROUTES.AUTH.FORGOT_PASSWORD, {
+        method: 'POST',
+        body: JSON.stringify({ email: resetEmail }),
+      });
+      setResetSent(true);
+    } catch {
+      setResetSent(true);
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
@@ -60,45 +86,103 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              placeholder="you@example.com"
-            />
-          </div>
+        {!showForgotPassword ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                placeholder="you@example.com"
+              />
+            </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-              placeholder="••••••••"
-            />
-          </div>
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                placeholder="••••••••"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(true)}
+                className="text-sm text-brand-600 hover:text-brand-700"
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              {loading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-gray-200 p-4">
+              <h2 className="text-sm font-semibold text-gray-900">Reset Password</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Enter your email to receive a reset link.
+              </p>
+
+              {resetSent ? (
+                <div className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+                  If an account exists with this email, a reset link has been sent.
+                  Check your inbox.
+                </div>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="mt-4 space-y-3">
+                  <input
+                    type="email"
+                    required
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                  >
+                    {resetLoading ? 'Sending...' : 'Send Reset Link'}
+                  </button>
+                </form>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setResetSent(false);
+                  setResetEmail('');
+                }}
+                className="mt-3 text-sm text-gray-500 hover:text-gray-700"
+              >
+                &larr; Back to login
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

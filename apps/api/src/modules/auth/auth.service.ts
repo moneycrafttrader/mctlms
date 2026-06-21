@@ -15,6 +15,7 @@
  */
 import {
   Injectable,
+  BadRequestException,
   UnauthorizedException,
   ForbiddenException,
   Logger,
@@ -107,7 +108,7 @@ export class AuthService {
     const { data: profile, error: profileError } = await this.supabaseService
       .client
       .from(TABLES.PROFILES)
-      .select('id, name, role, is_active')
+      .select('id, name, role, is_active, must_change_password')
       .eq('id', userId)
       .single();
 
@@ -174,6 +175,7 @@ export class AuthService {
         id: profile.id,
         name: profile.name,
         role: profile.role,
+        mustChangePassword: profile.must_change_password ?? false,
       },
     };
   }
@@ -233,6 +235,71 @@ export class AuthService {
     ]);
 
     return true;
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  //  changePassword
+  // ────────────────────────────────────────────────────────────────
+
+  /**
+   * Update a user's password in Supabase Auth and clear must_change_password flag.
+   * Called from the /change-password page after first login with temp password.
+   */
+  async changePassword(
+    userId: string,
+    newPassword: string,
+    confirmPassword: string,
+  ): Promise<{ message: string }> {
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException('Passwords do not match');
+    }
+
+    const { error } = await this.supabaseService.client.auth.admin.updateUserById(
+      userId,
+      { password: newPassword },
+    );
+
+    if (error) {
+      throw new BadRequestException(`Failed to update password: ${error.message}`);
+    }
+
+    await this.supabaseService.client
+      .from(TABLES.PROFILES)
+      .update({ must_change_password: false })
+      .eq('id', userId);
+
+    return { message: 'Password updated successfully. Please log in again.' };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  //  forgotPassword
+  // ────────────────────────────────────────────────────────────────
+
+  /**
+   * Send a Supabase password reset email to the user.
+   * Always returns 200 — never reveals if the email exists.
+   */
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const frontendUrl = this.configService.get<string>(
+      'FRONTEND_URL',
+      'https://mctlms-web.vercel.app',
+    );
+
+    const { error } =
+      await this.supabaseService.authClient.auth.resetPasswordForEmail(email, {
+        redirectTo: `${frontendUrl}/reset-password`,
+      });
+
+    if (error) {
+      this.logger.warn(
+        `Password reset requested for unknown/error email: ${email} — ${error.message}`,
+      );
+    }
+
+    return {
+      message:
+        'If an account exists with this email, a password reset link has been sent.',
+    };
   }
 
   // ────────────────────────────────────────────────────────────────

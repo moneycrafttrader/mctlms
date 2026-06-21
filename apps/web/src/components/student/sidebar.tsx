@@ -2,19 +2,20 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Home, BookOpen, Calendar, PlayCircle, User, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Video, LogOut } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
 
 const navItems = [
-  { label: 'Dashboard', href: ROUTES.STUDENT.HOME, icon: Home, exact: true },
-  { label: 'Courses', href: ROUTES.STUDENT.COURSES, icon: BookOpen },
-  { label: 'Live Sessions', href: ROUTES.STUDENT.LIVE_SESSIONS, icon: Calendar },
-  { label: 'Videos', href: ROUTES.STUDENT.VIDEOS, icon: PlayCircle },
-  { label: 'Profile', href: '/student/profile', icon: User },
+  { label: 'My Dashboard', href: ROUTES.STUDENT.HOME, icon: LayoutDashboard },
+  { label: 'My Courses', href: ROUTES.STUDENT.COURSES, icon: BookOpen },
+  { label: 'Live Sessions', href: ROUTES.STUDENT.LIVE_SESSIONS, icon: Video },
+  { label: 'Video Library', href: ROUTES.STUDENT.VIDEOS, icon: Video },
 ];
 
-function isActive(href: string, exact: boolean | undefined, pathname: string) {
-  if (exact) return pathname === href;
+function isActive(href: string, pathname: string) {
+  if (href === ROUTES.STUDENT.HOME) {
+    return pathname === href;
+  }
   return pathname.startsWith(href);
 }
 
@@ -24,15 +25,15 @@ export function StudentSidebar() {
   return (
     <>
       <div className="flex h-16 items-center gap-2 border-b border-gray-700 px-6">
-        <BookOpen className="h-6 w-6 text-brand-gold" />
-        <span className="text-lg font-bold text-white">MCT Learn</span>
+        <BookOpen className="h-6 w-6 text-brand-500" />
+        <span className="text-lg font-bold text-white">LMS</span>
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`sidebar-link${isActive(item.href, item.exact, pathname) ? ' active' : ''}`}
+            className={`sidebar-link${isActive(item.href, pathname) ? ' active' : ''}`}
           >
             <item.icon className="h-5 w-5" />
             {item.label}

@@ -2,7 +2,15 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 const ADMIN_ROUTES = ['/admin'];
 const STUDENT_ROUTES = ['/student'];
-const PUBLIC_ROUTES = ['/login', '/_next/static', '/_next/image', '/favicon.ico', '/api'];
+const PUBLIC_ROUTES = [
+  '/login',
+  '/change-password',
+  '/reset-password',
+  '/_next/static',
+  '/_next/image',
+  '/favicon.ico',
+  '/api',
+];
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
@@ -17,6 +25,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Allow public routes through without any checks
   if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
     return NextResponse.next();
   }
@@ -28,6 +37,7 @@ export async function middleware(request: NextRequest) {
   const isAdminRoute = ADMIN_ROUTES.some((route) => pathname.startsWith(route));
   const isStudentRoute = STUDENT_ROUTES.some((route) => pathname.startsWith(route));
 
+  // Not logged in — redirect to login for protected routes
   if (!role) {
     if (isAdminRoute || isStudentRoute) {
       const loginUrl = new URL('/login', request.url);
@@ -37,6 +47,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Check if user must change their password
+  // Read the must_change_password flag stored in localStorage by the login page.
+  // The middleware uses a cookie set by the login page to know this state.
+  const mustChangePassword = request.cookies.get('must_change_password')?.value === 'true';
+
+  if (mustChangePassword && pathname !== '/change-password') {
+    return NextResponse.redirect(new URL('/change-password', request.url));
+  }
+
+  // Role-based route blocking
   if (isAdminRoute && role !== 'admin') {
     if (role === 'student') {
       return NextResponse.redirect(new URL('/student', request.url));

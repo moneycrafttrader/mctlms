@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
-import { SessionList } from '@/components/student/live-sessions/session-list';
+import { getMySessions, type LiveSession } from '@/lib/api/live-sessions';
+import { PageHeader } from '@/components/shared/PageHeader';
+import { LiveSessionsList } from './live-sessions-list';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,15 +12,26 @@ export default async function StudentLiveSessionsPage() {
   } = await supabase.auth.getSession();
   const token = session?.access_token;
 
+  let upcoming: LiveSession[] = [];
+  let past: (LiveSession & { attendanceStatus?: string })[] = [];
+
+  try {
+    const result = await getMySessions(token);
+    upcoming = result.upcoming ?? [];
+    past = result.past ?? [];
+  } catch {
+    // API unavailable
+  }
+
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Live Sessions</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Join your scheduled live classes and review past sessions.
-        </p>
+    <div>
+      <PageHeader
+        title="Live Sessions"
+        subtitle={`${upcoming.length} upcoming`}
+      />
+      <div className="px-4 md:px-0">
+        <LiveSessionsList upcoming={upcoming} past={past} token={token} />
       </div>
-      <SessionList token={token} />
     </div>
   );
 }

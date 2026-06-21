@@ -23,6 +23,8 @@ import {
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -86,5 +88,37 @@ export class AuthController {
     @CurrentUser() user: { id: string; role: string; sessionId: string },
   ) {
     return user;
+  }
+
+  /**
+   * POST /auth/change-password
+   *
+   * Set a permanent password after first login with a temp password.
+   * Requires a valid JWT (the user is logged in with their temp password).
+   * On success, must_change_password is cleared and the user must log in again.
+   */
+  @Post('change-password')
+  async changePassword(
+    @CurrentUser() user: { id: string },
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(
+      user.id,
+      dto.newPassword,
+      dto.confirmPassword,
+    );
+  }
+
+  /**
+   * POST /auth/forgot-password
+   *
+   * Sends a Supabase password reset email.
+   * Public — no auth required.
+   * Always returns 200 to avoid email enumeration.
+   */
+  @Public()
+  @Post('forgot-password')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
   }
 }

@@ -4,6 +4,13 @@
 -- ============================================================================
 
 -- ────────────────────────────────────────────────────────────────────────────
+-- Migration (run against existing DB, NOT for fresh schema below):
+--
+-- ALTER TABLE profiles
+--   ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
+-- ────────────────────────────────────────────────────────────────────────────
+
+-- ────────────────────────────────────────────────────────────────────────────
 -- 1. Drop all existing tables (CASCADE) in reverse dependency order
 -- ────────────────────────────────────────────────────────────────────────────
 
@@ -78,6 +85,7 @@ CREATE TABLE profiles (
   role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'student')),
   zoom_user_id TEXT,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

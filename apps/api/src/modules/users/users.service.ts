@@ -162,6 +162,7 @@ export class UsersService {
     const userId = authData.user.id;
 
     // Step 2: Insert profile
+    const mustChangePassword = dto.role === UserRole.STUDENT;
     const { data: profile, error: profileError } = await this.supabaseService.client
       .from(TABLES.PROFILES)
       .insert({
@@ -172,6 +173,7 @@ export class UsersService {
         role: dto.role,
         zoom_user_id: dto.zoomUserId ?? null,
         is_active: true,
+        must_change_password: mustChangePassword,
       })
       .select()
       .single();
@@ -184,14 +186,11 @@ export class UsersService {
     }
 
     // Fire-and-forget welcome email — failure must NOT block user creation
-    try {
-      await this.emailService.sendWelcomeEmail(dto.email, dto.name, dto.password);
-    } catch (emailErr: any) {
-      this.logger.error(
-        `Welcome email failed for ${dto.email}: ${emailErr.message}`,
-        emailErr.stack,
+    this.emailService
+      .sendWelcomeEmail(dto.email, dto.name, dto.password)
+      .catch((emailErr: any) =>
+        this.logger.warn(`Welcome email failed for ${dto.email}: ${emailErr.message}`),
       );
-    }
 
     return profile as unknown as UserType;
   }

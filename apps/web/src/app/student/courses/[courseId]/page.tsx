@@ -1,19 +1,11 @@
-/*
- * Student Course Classroom — video player + library for a single course
- *
- * Data flow:
- *   1. Gets the user session from Supabase
- *   2. Fetches the course (with batches) from the API
- *   3. Finds which batch the student is enrolled in for this course
- *   4. Fetches ready videos assigned to that batch
- *   5. Renders the header + video theater
- */
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { getStudentCourse } from '@/lib/api/courses';
+import { getMySessions, type LiveSession } from '@/lib/api/live-sessions';
 import { getBatchVideos } from '@/lib/api/videos';
-import { CourseClassroomHeader } from '@/components/student/courses/course-classroom-header';
-import { VideoTheater } from '@/components/student/courses/video-theater';
+import { PageHeader } from '@/components/shared/PageHeader';
+import { CourseDetailSessions } from './course-detail-sessions';
+import { CourseDetailRecordings } from './course-detail-recordings';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +13,14 @@ interface Props {
   params: { courseId: string };
 }
 
-export default async function StudentCoursePage({ params }: Props) {
+function filterSessionsByBatch(
+  sessions: LiveSession[],
+  batchIds: string[],
+): LiveSession[] {
+  return sessions;
+}
+
+export default async function StudentCourseDetailPage({ params }: Props) {
   const supabase = await createClient();
   const {
     data: { session },
@@ -34,46 +33,100 @@ export default async function StudentCoursePage({ params }: Props) {
 
   try {
     const course = await getStudentCourse(params.courseId, token);
-
     const enrolledBatches = (course as any).enrolledBatches ?? [];
-    const batches = (course as any).batches ?? [];
+
     if (enrolledBatches.length === 0) {
-      return (
-        <div className="mx-auto mt-12 max-w-2xl rounded-xl border border-red-100 bg-white p-8 text-center shadow-sm">
-          <h2 className="text-xl font-bold text-red-600">Access Denied</h2>
-          <p className="mt-2 text-gray-600">
-            You are not assigned to an active batch for this course.
-          </p>
-        </div>
-      );
+      return <AccessDenied />;
     }
 
     const batch = enrolledBatches[0];
+    const allBatchIds = enrolledBatches.map((b: any) => b.id);
 
-    const [videos] = await Promise.all([
+    const [sessionsResult, videos] = await Promise.all([
+      getMySessions(token),
       getBatchVideos(batch.id, token),
     ]);
 
+    const allSessions = [
+      ...(sessionsResult.upcoming ?? []),
+      ...(sessionsResult.past ?? []),
+    ];
+
+    const now = new Date();
+    const upcomingSessions = allSessions
+      .filter((s) => s.status === 'scheduled' || s.status === 'live')
+      .sort(
+        (a, b) =>
+          new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+      );
+    const pastSessions = allSessions
+      .filter((s) => s.status === 'ended' || s.status === 'cancelled')
+      .sort(
+        (a, b) =>
+          new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
+      );
+
     return (
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <CourseClassroomHeader
-          name={course.name}
-          description={(course as any).description}
-          batchName={batch.name}
-        />
-        <VideoTheater videos={videos} />
+      <div>
+        <PageHeader title={course.name} showBack />
+        <div className="space-y-6 px-4 md:px-0">
+          <div className="rounded-card border border-surface-border bg-surface-card p-4">
+            {course.description && (
+              <p className="text-sm text-text-secondary">{course.description}</p>
+            )}
+            {enrolledBatches.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {enrolledBatches.map((b: any) => (
+                  <span
+                    key={b.id}
+                    className="rounded-full bg-brand-navy/10 px-2.5 py-0.5 text-xs font-medium text-brand-navy"
+                  >
+                    {b.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <CourseDetailSessions
+            upcoming={upcomingSessions}
+            past={pastSessions}
+            token={token}
+          />
+
+          <CourseDetailRecordings videos={videos} />
+        </div>
       </div>
     );
   } catch {
-    return (
-      <div className="mt-12 p-8 text-center">
-        <h2 className="text-xl font-bold text-gray-900">
-          Failed to load classroom
+    return <ErrorState />;
+  }
+}
+
+function AccessDenied() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center px-4">
+      <div className="text-center">
+        <h2 className="text-lg font-bold text-red-600">Access Denied</h2>
+        <p className="mt-2 text-sm text-text-secondary">
+          You are not assigned to an active batch for this course.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ErrorState() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center px-4">
+      <div className="text-center">
+        <h2 className="text-lg font-bold text-text-primary">
+          Failed to load course
         </h2>
-        <p className="mt-2 text-gray-500">
+        <p className="mt-2 text-sm text-text-secondary">
           Please try refreshing the page or contact support.
         </p>
       </div>
-    );
-  }
+    </div>
+  );
 }

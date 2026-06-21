@@ -1,5 +1,7 @@
 export const ROUTES = {
   LOGIN: '/login',
+  CHANGE_PASSWORD: '/change-password',
+  RESET_PASSWORD: '/reset-password',
   ADMIN: {
     HOME: '/admin',
     STUDENTS: '/admin/students',
@@ -29,6 +31,8 @@ export const API_ROUTES = {
     LOGIN: '/auth/login',
     LOGOUT: '/auth/logout',
     VALIDATE_SESSION: '/auth/validate-session',
+    CHANGE_PASSWORD: '/auth/change-password',
+    FORGOT_PASSWORD: '/auth/forgot-password',
   },
   USERS: '/users',
   COURSES: '/courses',
