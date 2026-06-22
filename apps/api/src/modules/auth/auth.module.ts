@@ -3,9 +3,10 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { DeviceModule } from '../devices/device.module';
 import { EmailModule } from '../email/email.module';
+import { PlaybackModule } from '../playback/playback.module';
 
 @Module({
-  imports: [DeviceModule, EmailModule],
+  imports: [DeviceModule, EmailModule, PlaybackModule],
   controllers: [AuthController],
   providers: [AuthService],
   exports: [AuthService],
