@@ -82,11 +82,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (initialised.current) return;
-    initialised.current = true;
-
     const store = useAuthStore.getState();
     logTransition('(mount)', store.status, `store initial state: ${store.status}`);
+
+    // If already authenticated (set by login page), just start lifecycle and skip hydration
+    if (store.status === 'authenticated' && store.user && store.token) {
+      log('Store already authenticated — starting lifecycle directly');
+      startLifecycle();
+      return;
+    }
+
+    if (initialised.current) return;
+    initialised.current = true;
 
     function clearTimeoutGuard() {
       if (timeoutRef.current !== null) {

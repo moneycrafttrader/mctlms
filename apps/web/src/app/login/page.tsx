@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchApi, ApiError } from '@/lib/api-client';
 import { ROUTES, API_ROUTES } from '@/lib/constants';
-import { setMustChangePassword } from '@/lib/auth';
+import { setMustChangePassword, setSessionCache } from '@/lib/auth';
+import { useAuthStore, type AuthUser } from '@/stores/auth.store';
 import { useDeviceFingerprint } from '@/lib/hooks/useDeviceFingerprint';
 
 export default function LoginPage() {
@@ -45,6 +46,17 @@ export default function LoginPage() {
         '; path=/; max-age=86400; secure; samesite=lax';
 
       setMustChangePassword(user.mustChangePassword);
+
+      // Persist to localStorage so AuthProvider Phase 1 finds it on next page
+      const authUser: AuthUser = { id: user.id, name: user.name, email: user.email, role: user.role };
+      setSessionCache({
+        user: authUser,
+        token,
+        mustChangePassword: user.mustChangePassword ?? false,
+        sessionCount: 0,
+      });
+      // Update Zustand store so GuardRoute sees authenticated state immediately
+      useAuthStore.getState().setAuth(authUser, token, user.mustChangePassword ?? false);
 
       if (user.mustChangePassword) {
         router.push(ROUTES.CHANGE_PASSWORD);
