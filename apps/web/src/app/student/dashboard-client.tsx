@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   BookOpen,
@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { PageContainer } from '@/components/shared/PageContainer';
 import { MobileHeader } from '@/components/shared/MobileHeader';
+import { ErrorBoundary } from '@/components/debug/ErrorBoundary';
 import { type LiveSession, requestJoinToken, getSessionJoinUrl } from '@/lib/api/live-sessions';
 import { type StudentCourse } from '@/lib/api/courses';
 import { type StudentVideo } from '@/lib/api/videos';
@@ -107,13 +108,35 @@ const achievements = [
   { label: 'Course Complete', icon: Award, unlocked: false },
 ];
 
+let _renderOrder = 0;
+function renderTrace(section: string): void {
+  _renderOrder++;
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Dashboard:${_renderOrder}] Rendering section: ${section}`);
+  }
+}
+
 export function DashboardClient({ name, nextClass, upcoming, continueContent, courses, recordings, results, pastSessions }: DashboardClientProps) {
   const [greeting, setGreeting] = useState('');
   const [joining, setJoining] = useState(false);
   const [streak] = useState(3);
+  const didLog = useRef(false);
 
   useEffect(() => {
     setGreeting(getGreeting());
+    if (process.env.NODE_ENV === 'development' && !didLog.current) {
+      didLog.current = true;
+      console.log('[Dashboard] Props:', {
+        name,
+        nextClass: nextClass?.topic || null,
+        upcomingCount: upcoming.length,
+        continueContentCount: continueContent.length,
+        coursesCount: courses.length,
+        recordingsCount: recordings.length,
+        resultsType: Array.isArray(results) ? `array[${results.length}]` : typeof results,
+        resultsKeys: Array.isArray(results) ? 'N/A' : Object.keys(results).join(', '),
+      });
+    }
   }, []);
 
   const handleJoin = async () => {
@@ -135,7 +158,9 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
   const totalWatchedSeconds = recordings.reduce((acc, r) => acc + (r.progress.watched_seconds || 0), 0);
   const completedTests = results.length;
 
+  renderTrace('Welcome Header');
   return (
+    <ErrorBoundary name="StudentDashboard">
     <>
       <MobileHeader title="Dashboard" />
 
@@ -176,6 +201,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
           </div>
 
           {/* ── Continue Learning ── */}
+          {renderTrace('Continue Learning')}
           <div className="animate-fade-in-up" style={{ animationDelay: '80ms' }}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-text-primary">
@@ -232,6 +258,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
           </div>
 
           {/* ── Upcoming Class ── */}
+          {renderTrace('Upcoming Class')}
           <div className="animate-fade-in-up" style={{ animationDelay: '160ms' }}>
             <h2 className="text-sm font-semibold text-text-primary mb-3">
               {isLive ? '🔴 Live Now' : nextClass ? 'Upcoming Class' : 'No Upcoming Classes'}
@@ -285,6 +312,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
           </div>
 
           {/* ── Quick Stats ── */}
+          {renderTrace('Quick Stats')}
           <div className="animate-fade-in-up" style={{ animationDelay: '240ms' }}>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <div className="stat-card">
@@ -319,6 +347,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
           </div>
 
           {/* ── Recent Test ── */}
+          {renderTrace('Recent Test')}
           {lastResult && (
             <div className="animate-fade-in-up" style={{ animationDelay: '320ms' }}>
               <h2 className="text-sm font-semibold text-text-primary mb-3">Recent Test Result</h2>
@@ -353,6 +382,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
           )}
 
           {/* ── Progress Overview ── */}
+          {renderTrace('Progress Overview')}
           <div className="animate-fade-in-up" style={{ animationDelay: '400ms' }}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-text-primary">Progress Overview</h2>
@@ -393,6 +423,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
           </div>
 
           {/* ── Achievements ── */}
+          {renderTrace('Achievements')}
           <div className="animate-fade-in-up" style={{ animationDelay: '480ms' }}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-text-primary">Achievements</h2>
@@ -423,5 +454,6 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
         </div>
       </PageContainer>
     </>
+    </ErrorBoundary>
   );
 }

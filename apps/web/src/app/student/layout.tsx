@@ -6,9 +6,10 @@ import { GuardRoute } from '@/lib/guards/client-guard';
 
 export default function StudentLayout({ children }: { children: ReactNode }) {
   return (
-    <GuardRoute>
-    <div className="min-h-screen bg-surface-page">
+    <>
       <SessionExpiredOverlay />
+      <GuardRoute>
+      <div className="min-h-screen bg-surface-page">
 
       {/* Desktop layout */}
       <div className="hidden md:flex">
@@ -35,6 +36,7 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
         <StudentBottomNav />
       </div>
     </div>
-    </GuardRoute>
+      </GuardRoute>
+    </>
   );
 }

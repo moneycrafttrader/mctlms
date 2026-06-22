@@ -38,9 +38,10 @@ const navItems = [
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
-    <GuardRoute>
-    <div className="flex min-h-screen bg-surface-page">
+    <>
       <SessionExpiredOverlay />
+      <GuardRoute>
+    <div className="flex min-h-screen bg-surface-page">
       <aside className="flex w-64 flex-col bg-sidebar-bg">
         <AdminSidebarWrapper />
         <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-divider px-6">
@@ -84,6 +85,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <div className="flex-1 p-6 md:p-8">{children}</div>
       </main>
     </div>
-    </GuardRoute>
+      </GuardRoute>
+    </>
   );
 }

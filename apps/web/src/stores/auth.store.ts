@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type SessionStatus = 'idle' | 'loading' | 'authenticated' | 'expired' | 'offline' | 'takeover';
+export type SessionStatus = 'idle' | 'loading' | 'authenticated' | 'expired' | 'offline' | 'takeover' | 'error';
 
 export interface AuthUser {
   id: string;
@@ -29,6 +29,7 @@ interface AuthState {
     token: string,
     mustChangePassword?: boolean,
   ) => void;
+  setAuthFailed: (error: string) => void;
   logout: () => void;
   updateUser: (partial: Partial<AuthUser>) => void;
 }
@@ -68,6 +69,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       status: 'authenticated',
       error: null,
     }),
+
+  setAuthFailed: (error) =>
+    set({ status: 'error', error, user: null, token: null }),
 
   logout: () =>
     set({
