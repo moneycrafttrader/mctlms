@@ -40,6 +40,7 @@ export class QuestionsService {
     topicId?: string;
     difficulty?: string;
     questionType?: string;
+    search?: string;
     page?: number;
     limit?: number;
   }) {
@@ -51,6 +52,7 @@ export class QuestionsService {
     if (options?.topicId) query = query.eq('topic_id', options.topicId);
     if (options?.difficulty) query = query.eq('difficulty', options.difficulty);
     if (options?.questionType) query = query.eq('question_type', options.questionType);
+    if (options?.search) query = query.ilike('question_text', `%${options.search}%`);
 
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 50;

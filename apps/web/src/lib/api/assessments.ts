@@ -54,10 +54,11 @@ export async function duplicateTest(id: string) {
   return fetchApi<TestResponse>(`/tests/${id}/duplicate`, { method: 'POST' });
 }
 
-export async function getTests(params?: { status?: string; batchId?: string; page?: number; limit?: number }) {
+export async function getTests(params?: { status?: string; batchId?: string; search?: string; page?: number; limit?: number }) {
   const searchParams = new URLSearchParams();
   if (params?.status) searchParams.set('status', params.status);
   if (params?.batchId) searchParams.set('batchId', params.batchId);
+  if (params?.search) searchParams.set('search', params.search);
   if (params?.page) searchParams.set('page', String(params.page));
   if (params?.limit) searchParams.set('limit', String(params.limit));
   const query = searchParams.toString();
@@ -123,11 +124,12 @@ export async function bulkImportQuestions(data: { questions: CreateQuestionData[
   return fetchApi<QuestionResponse[]>('/questions/bulk-import', { method: 'POST', body: JSON.stringify(data) });
 }
 
-export async function getQuestions(params?: { topicId?: string; difficulty?: string; questionType?: string; page?: number; limit?: number }) {
+export async function getQuestions(params?: { topicId?: string; difficulty?: string; questionType?: string; search?: string; page?: number; limit?: number }) {
   const searchParams = new URLSearchParams();
   if (params?.topicId) searchParams.set('topicId', params.topicId);
   if (params?.difficulty) searchParams.set('difficulty', params.difficulty);
   if (params?.questionType) searchParams.set('questionType', params.questionType);
+  if (params?.search) searchParams.set('search', params.search);
   if (params?.page) searchParams.set('page', String(params.page));
   if (params?.limit) searchParams.set('limit', String(params.limit));
   const query = searchParams.toString();
@@ -237,6 +239,16 @@ export async function publishResults(attemptId: string) {
 
 export async function calculateAnalytics(testId: string) {
   return fetchApi<any>(`/evaluation/tests/${testId}/analytics`, { method: 'POST' });
+}
+
+// ─── Uploads ──────────────────────────────────────────────────
+export async function uploadQuestionImage(file: File): Promise<{ url: string; fileName: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return fetchApi<{ url: string; fileName: string }>('/uploads/question-image', {
+    method: 'POST',
+    body: formData,
+  });
 }
 
 // ─── Results ──────────────────────────────────────────────────

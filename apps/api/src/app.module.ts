@@ -45,6 +45,7 @@ import { QuestionsModule } from './modules/questions/questions.module';
 import { AttemptsModule } from './modules/attempts/attempts.module';
 import { EvaluationModule } from './modules/evaluation/evaluation.module';
 import { ResultsModule } from './modules/results/results.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 // ── Common providers ─────────────────────────────────────────
 import { SupabaseService } from './common/services/supabase.service';
@@ -119,6 +120,7 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     AttemptsModule,
     EvaluationModule,
     ResultsModule,
+    UploadsModule,
   ],
   exports: [
     SupabaseService,

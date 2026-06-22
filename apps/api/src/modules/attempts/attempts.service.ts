@@ -154,6 +154,8 @@ export class AttemptsService {
       throw new ForbiddenException('Attempt is no longer in progress');
     }
 
+    await this.validateQuestionsBelongToTest(attempt.test_id, [dto.questionId]);
+
     const { error: upsertError } = await this.supabaseService.client
       .from(TABLES.TEST_ANSWERS)
       .upsert(
@@ -191,6 +193,8 @@ export class AttemptsService {
     if (attempt.status !== 'in_progress') {
       throw new ForbiddenException('Attempt is no longer in progress');
     }
+
+    await this.validateQuestionsBelongToTest(attempt.test_id, answers.map((a) => a.questionId));
 
     for (const answer of answers) {
       const { error } = await this.supabaseService.client
@@ -230,6 +234,8 @@ export class AttemptsService {
     if (attempt.status !== 'in_progress') {
       throw new ForbiddenException('Attempt is no longer in progress');
     }
+
+    await this.validateQuestionsBelongToTest(attempt.test_id, dto.answers.map((a) => a.questionId));
 
     for (const answer of dto.answers) {
       const { error } = await this.supabaseService.client
@@ -359,6 +365,24 @@ export class AttemptsService {
       test: test ?? null,
       test_answers: this.maybeShuffleQuestions({ ...attempt, test_answers: answers ?? [] }),
     };
+  }
+
+  private async validateQuestionsBelongToTest(testId: string, questionIds: string[]): Promise<void> {
+    if (!questionIds.length) return;
+
+    const { data: validQuestions, error } = await this.supabaseService.client
+      .from(TABLES.TEST_QUESTION_BANK)
+      .select('question_bank_id')
+      .eq('test_id', testId);
+
+    if (error) throw error;
+
+    const validIds = new Set((validQuestions ?? []).map((q) => q.question_bank_id));
+    for (const qid of questionIds) {
+      if (!validIds.has(qid)) {
+        throw new ForbiddenException(`Question ${qid} does not belong to this test`);
+      }
+    }
   }
 
   private maybeShuffleQuestions(attempt: any) {

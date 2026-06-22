@@ -94,10 +94,17 @@ function secondsToMinutes(seconds: number) {
   return Math.floor(seconds / 60);
 }
 
+function getCourseProgress(recordings: StudentVideo[]): number {
+  if (recordings.length === 0) return 0;
+  const withProgress = recordings.filter(r => (r.progress?.watched_seconds ?? 0) > 0).length;
+  return Math.round((withProgress / recordings.length) * 100);
+}
+
 function getProgressPercent(video: StudentVideo): number {
-  if (!video.progress.watched_seconds) return 0;
+  const watched = video.progress?.watched_seconds;
+  if (!watched) return 0;
   const totalSec = 600;
-  return Math.min(100, Math.round((video.progress.watched_seconds / totalSec) * 100));
+  return Math.min(100, Math.round((watched / totalSec) * 100));
 }
 
 const achievements = [
@@ -156,7 +163,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
 
   const isLive = nextClass?.status === 'live';
   const lastResult = results.length > 0 ? (results[0] as Record<string, unknown>) : null;
-  const totalWatchedSeconds = recordings.reduce((acc, r) => acc + (r.progress.watched_seconds || 0), 0);
+  const totalWatchedSeconds = recordings.reduce((acc, r) => acc + (r.progress?.watched_seconds || 0), 0);
   const completedTests = results.length;
 
   renderTrace('Welcome Header');
@@ -221,7 +228,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
                     <Card className="w-44" padding="none">
                       <div className="relative flex aspect-video items-center justify-center rounded-t-card bg-gradient-to-br from-brand-100 to-brand-50">
                         <PlayCircle className="h-8 w-8 text-brand-400/60" />
-                        {item.progress.watched_seconds > 0 && (
+                        {item.progress?.watched_seconds > 0 && (
                           <div className="absolute bottom-0 left-0 right-0 h-1 bg-surface-border">
                             <div
                               className="h-full rounded-full bg-brand-500"
@@ -233,7 +240,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
                       <div className="p-3">
                         <p className="truncate text-sm font-medium text-text-primary">{item.title}</p>
                         <div className="mt-1.5 flex items-center gap-2 text-2xs text-text-muted">
-                          {item.progress.watched_seconds > 0 ? (
+                          {item.progress?.watched_seconds > 0 ? (
                             <>
                               <Clock className="h-3 w-3" />
                               <span>{secondsToMinutes(item.progress.watched_seconds)}m watched</span>
@@ -403,9 +410,9 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-text-primary">{course.name}</p>
                           <div className="mt-1.5 flex items-center gap-2">
-                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted">
-                              <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, Math.floor(Math.random() * 80) + 10)}%` }} />
-                            </div>
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted">
+                                <div className="h-full rounded-full bg-brand-500" style={{ width: `${getCourseProgress(recordings)}%` }} />
+                              </div>
                             <span className="text-2xs font-medium text-text-muted">In progress</span>
                           </div>
                         </div>

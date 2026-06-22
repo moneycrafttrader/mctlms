@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Plus,
   Search,
@@ -57,6 +57,8 @@ export default function AdminQuestionsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [topics, setTopics] = useState<{ id: string; name: string }[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -68,6 +70,15 @@ export default function AdminQuestionsPage() {
     getTopics().then(setTopics).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 400);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchQuery]);
+
   const fetchQuestions = useCallback(async () => {
     setLoading(true);
     try {
@@ -75,6 +86,7 @@ export default function AdminQuestionsPage() {
         topicId: topicFilter || undefined,
         difficulty: difficultyFilter || undefined,
         questionType: typeFilter || undefined,
+        search: debouncedSearch || undefined,
         page,
         limit,
       });
@@ -85,7 +97,7 @@ export default function AdminQuestionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [topicFilter, difficultyFilter, typeFilter, page]);
+  }, [topicFilter, difficultyFilter, typeFilter, debouncedSearch, page]);
 
   useEffect(() => {
     fetchQuestions();

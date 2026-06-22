@@ -21,11 +21,13 @@ export class QuestionsController {
     return this.questionsService.bulkImport(dto, user.id);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get()
   findAll(
     @Query('topicId') topicId?: string,
     @Query('difficulty') difficulty?: string,
     @Query('questionType') questionType?: string,
+    @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -33,16 +35,19 @@ export class QuestionsController {
       topicId,
       difficulty,
       questionType,
+      search,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
   }
 
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get('topics')
   getTopics() {
     return this.questionsService.getTopics();
   }
 
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.questionsService.findOne(id);

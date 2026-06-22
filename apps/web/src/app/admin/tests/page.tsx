@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   Plus,
   Edit3,
@@ -38,14 +39,26 @@ export default function AdminTestsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ type: 'archive' | 'delete'; id: string; title: string } | null>(null);
 
   const limit = 20;
 
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 400);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchQuery]);
+
   const fetchTests = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getTests({ status: statusFilter || undefined, page, limit });
+      const result = await getTests({ status: statusFilter || undefined, search: debouncedSearch || undefined, page, limit });
       setTests(result.items);
       setTotal(result.total);
     } catch {
@@ -53,7 +66,7 @@ export default function AdminTestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, page]);
+  }, [statusFilter, debouncedSearch, page]);
 
   useEffect(() => {
     fetchTests();
@@ -62,24 +75,35 @@ export default function AdminTestsPage() {
   const handleDuplicate = async (id: string) => {
     try {
       await duplicateTest(id);
+      toast.success('Test duplicated successfully');
       fetchTests();
-    } catch {}
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to duplicate test');
+    }
   };
 
   const handleArchive = async (id: string) => {
     try {
       await archiveTest(id);
+      toast.success('Test archived');
       setConfirmAction(null);
       fetchTests();
-    } catch {}
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to archive test');
+      setConfirmAction(null);
+    }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await deleteTest(id);
+      toast.success('Test deleted');
       setConfirmAction(null);
       fetchTests();
-    } catch {}
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete test');
+      setConfirmAction(null);
+    }
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -104,6 +128,8 @@ export default function AdminTestsPage() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <input
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); }}
             placeholder="Search tests..."
             className="w-full rounded-xl border border-surface-border bg-surface-card py-2.5 pl-10 pr-4 text-sm text-text-primary placeholder:text-text-muted focus:border-brand-navy focus:outline-none"
           />

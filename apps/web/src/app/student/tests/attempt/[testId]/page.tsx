@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   Clock, AlertTriangle, CheckCircle, XCircle, HelpCircle,
   ArrowLeft, ArrowRight, Send, ChevronDown, ChevronUp,
   FileText,
 } from 'lucide-react';
-import { startAttempt, getAttempt, saveAllAnswers, submitAttempt, getAttemptTimer } from '@/lib/api/assessments';
+import { startAttempt, getAttempt, saveAllAnswers, submitAttempt, getAttemptTimer, uploadQuestionImage } from '@/lib/api/assessments';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ScreenRecordingDetector } from '@/components/shared/ScreenRecordingDetector';
 import { cn } from '@/lib/utils';
@@ -156,23 +157,45 @@ function QuestionRenderer({
         />
       );
 
-    case 'image_upload':
+    case 'image_upload': {
+      const isUploading = typeof value === 'object' && value !== null && '_uploading' in value;
+      const hasValue = value && typeof value === 'object' && value.url;
       return (
         <div className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-surface-border p-8 text-center">
           <input
             type="file"
             accept="image/*"
-            onChange={(e) => {
+            disabled={isUploading}
+            onChange={async (e) => {
               const file = e.target.files?.[0];
-              if (file) onChange({ fileName: file.name, fileSize: file.size, placeholder: true });
+              if (!file) return;
+              onChange({ _uploading: true, fileName: file.name });
+              try {
+                const result = await uploadQuestionImage(file);
+                onChange({ url: result.url, fileName: result.fileName });
+                toast.success('Image uploaded');
+              } catch {
+                toast.error('Failed to upload image');
+                onChange(undefined);
+              }
             }}
-            className="text-sm text-text-secondary file:mr-3 file:rounded-lg file:border-0 file:bg-brand-navy file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-brand-navyDark"
+            className="text-sm text-text-secondary file:mr-3 file:rounded-lg file:border-0 file:bg-brand-navy file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-brand-navyDark disabled:opacity-50"
           />
-          {value && (
-            <p className="text-xs text-text-muted">Uploaded: {value.fileName}</p>
+          {isUploading && (
+            <div className="flex items-center gap-2 text-xs text-text-muted">
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-brand-navy border-t-transparent" />
+              Uploading...
+            </div>
+          )}
+          {hasValue && (
+            <div className="w-full space-y-2">
+              <p className="text-xs text-text-muted">Uploaded: {value.fileName}</p>
+              <img src={value.url} alt="Uploaded answer" className="max-h-40 rounded-lg border border-surface-border object-contain" />
+            </div>
           )}
         </div>
       );
+    }
 
     case 'image_based':
       return (
@@ -330,7 +353,7 @@ export default function TestAttemptPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
 
-  // Auto-save
+  // Auto-save with retry — preserves answers in local state even on failure
   const debouncedSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
@@ -343,14 +366,24 @@ export default function TestAttemptPage() {
           answersList.push({ questionId: q.id, questionType: q.question_type, answer: val });
         }
       }
-      try {
-        await saveAllAnswers(attemptId, {
-          answers: answersList,
-          currentQuestionIndex: currentIndex,
-          timeRemainingSeconds: timeRemaining ?? undefined,
-        });
-      } catch {
-        // silent
+      if (answersList.length === 0) return;
+      let lastError: any;
+      for (let retry = 0; retry < 3; retry++) {
+        try {
+          await saveAllAnswers(attemptId, {
+            answers: answersList,
+            currentQuestionIndex: currentIndex,
+            timeRemainingSeconds: timeRemaining ?? undefined,
+          });
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (retry < 2) await new Promise(r => setTimeout(r, 1000 * (retry + 1)));
+        }
+      }
+      if (lastError) {
+        toast.error('Auto-save failed. Your answers are saved locally.');
       }
     }, 2000);
   }, [attemptId, questions, currentIndex, timeRemaining]);

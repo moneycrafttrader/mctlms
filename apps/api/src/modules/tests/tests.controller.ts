@@ -27,17 +27,20 @@ export class TestsController {
   findAll(
     @Query('status') status?: string,
     @Query('batchId') batchId?: string,
+    @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     return this.testsService.findAll({
       status,
       batchId,
+      search,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
   }
 
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.testsService.findOne(id);

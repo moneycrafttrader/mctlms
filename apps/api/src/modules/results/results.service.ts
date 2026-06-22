@@ -35,13 +35,12 @@ export class ResultsService {
       throw new NotFoundException('Test not found');
     }
 
-    // Fetch result with joins
+    // Fetch result with test join
     const { data: result, error: resultError } = await this.supabaseService.client
       .from(TABLES.TEST_RESULTS)
       .select(`
         *,
-        test:${TABLES.TESTS}(title, total_marks, passing_marks, duration_minutes, show_result_immediately),
-        answers:${TABLES.TEST_ANSWERS}(*)
+        test:${TABLES.TESTS}(title, total_marks, passing_marks, duration_minutes, show_result_immediately)
       `)
       .eq('attempt_id', attemptId)
       .single();
@@ -50,7 +49,11 @@ export class ResultsService {
       throw new NotFoundException('Result not found');
     }
 
-    // Results are only created on publish, so existence implies published
+    // Fetch answers separately (no direct FK between test_results and test_answers)
+    const { data: answers } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .select('*')
+      .eq('attempt_id', attemptId);
 
     return {
       obtained_marks: result.obtained_marks,
@@ -65,6 +68,7 @@ export class ResultsService {
       passed: result.passed,
       duration_seconds: result.duration_seconds,
       published_at: result.published_at,
+      answers: answers ?? [],
     };
   }
 
@@ -162,12 +166,12 @@ export class ResultsService {
     return {
       total_attempts: data.total_attempts,
       average_score: data.average_score,
-      highest: data.highest,
-      lowest: data.lowest,
-      median: data.median,
+      highest_score: data.highest_score,
+      lowest_score: data.lowest_score,
+      median_score: data.median_score,
       pass_rate: data.pass_rate,
       average_accuracy: data.average_accuracy,
-      average_duration: data.average_duration,
+      average_duration_seconds: data.average_duration_seconds,
       question_performance: data.question_performance,
       topic_performance: data.topic_performance,
       batch_performance: data.batch_performance,

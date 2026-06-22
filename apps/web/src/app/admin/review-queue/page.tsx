@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import {
   ClipboardCheck,
   ChevronDown,
@@ -43,14 +44,24 @@ export default function AdminReviewQueuePage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [reviewMarks, setReviewMarks] = useState<Record<string, string>>({});
   const [reviewFeedback, setReviewFeedback] = useState<Record<string, string>>({});
+  const [debouncedTestFilter, setDebouncedTestFilter] = useState('');
+  const filterTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (filterTimerRef.current) clearTimeout(filterTimerRef.current);
+    filterTimerRef.current = setTimeout(() => {
+      setDebouncedTestFilter(testFilter);
+    }, 400);
+    return () => { if (filterTimerRef.current) clearTimeout(filterTimerRef.current); };
+  }, [testFilter]);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
       const result = await getReviewQueue({
         status: statusFilter || undefined,
-        testId: testFilter || undefined,
+        testId: debouncedTestFilter || undefined,
       });
       setItems(result);
     } catch {
@@ -58,7 +69,7 @@ export default function AdminReviewQueuePage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, testFilter]);
+  }, [statusFilter, debouncedTestFilter]);
 
   useEffect(() => {
     fetchItems();
@@ -68,7 +79,10 @@ export default function AdminReviewQueuePage() {
     setActionLoading(reviewId);
     try {
       await assignForReview(reviewId);
+      toast.success('Assigned for review');
       fetchItems();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to assign for review');
     } finally {
       setActionLoading(null);
     }
@@ -83,7 +97,10 @@ export default function AdminReviewQueuePage() {
         marksAwarded: marks,
         feedback: reviewFeedback[reviewId] || undefined,
       });
+      toast.success('Review submitted');
       fetchItems();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to submit review');
     } finally {
       setActionLoading(null);
     }
@@ -93,7 +110,10 @@ export default function AdminReviewQueuePage() {
     setActionLoading(attemptId);
     try {
       await autoGradeAttempt(attemptId);
+      toast.success('Auto-grading complete');
       fetchItems();
+    } catch (err: any) {
+      toast.error(err?.message || 'Auto-grading failed');
     } finally {
       setActionLoading(null);
     }
@@ -103,7 +123,10 @@ export default function AdminReviewQueuePage() {
     setActionLoading(attemptId);
     try {
       await publishResults(attemptId);
+      toast.success('Results published');
       fetchItems();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to publish results');
     } finally {
       setActionLoading(null);
     }

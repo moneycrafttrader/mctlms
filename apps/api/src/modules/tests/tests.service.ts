@@ -158,7 +158,7 @@ export class TestsService {
     return this.findOne(testId);
   }
 
-  async findAll(options?: { status?: string; batchId?: string; page?: number; limit?: number }) {
+  async findAll(options?: { status?: string; batchId?: string; search?: string; page?: number; limit?: number }) {
     let query = this.supabaseService.client
       .from(TABLES.TESTS)
       .select(TEST_SELECT, { count: 'exact' })
@@ -166,6 +166,7 @@ export class TestsService {
 
     if (options?.status) query = query.eq('status', options.status);
     if (options?.batchId) query = query.eq('test_batches.batch_id', options.batchId);
+    if (options?.search) query = query.ilike('title', `%${options.search}%`);
 
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 50;

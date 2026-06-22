@@ -19,6 +19,15 @@ function formatTime(seconds: number): string {
   return `${s}s`;
 }
 
+function safeParseAnswer(val: any): any {
+  if (typeof val !== 'string') return val;
+  try {
+    return JSON.parse(val);
+  } catch {
+    return val;
+  }
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', {
     day: 'numeric',
@@ -324,7 +333,8 @@ export default function TestResultPage() {
                               const optKey = opt.key ?? opt.id ?? String(oi);
                               const optVal = opt.value ?? opt.label ?? opt;
                               const isStudentAns = String(q.student_answer) === String(optKey) || (Array.isArray(q.student_answer) && q.student_answer.includes(optKey));
-                              const isCorrectAns = String(q.correct_answer) === String(optKey) || (Array.isArray(JSON.parse(q.correct_answer || '[]')) && JSON.parse(q.correct_answer || '[]').includes(optKey));
+                              const parsedCorrect = safeParseAnswer(q.correct_answer);
+                              const isCorrectAns = String(q.correct_answer) === String(optKey) || (Array.isArray(parsedCorrect) && parsedCorrect.includes(optKey));
 
                               let bgColor = 'bg-surface-muted';
                               if (isCorrectAns) bgColor = 'bg-status-success/10 border-status-success';

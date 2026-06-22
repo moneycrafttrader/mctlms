@@ -98,7 +98,7 @@ export class EvaluationService {
       marksPossible: 0,
     };
 
-    const reviewQueueEntries: { attempt_id: string; test_answer_id: string }[] = [];
+    const reviewQueueEntries: { attempt_id: string; answer_id: string; test_id: string; question_id: string }[] = [];
 
     for (const answer of answers) {
       const questionBank = answer.question_bank;
@@ -123,7 +123,9 @@ export class EvaluationService {
 
         reviewQueueEntries.push({
           attempt_id: attemptId,
-          test_answer_id: answer.id,
+          answer_id: answer.id,
+          test_id: test.id,
+          question_id: questionBank.id,
         });
 
         summary.manualReview++;
@@ -162,7 +164,9 @@ export class EvaluationService {
         .from(TABLES.TEST_REVIEW_QUEUE)
         .insert(reviewQueueEntries.map((entry) => ({
           attempt_id: entry.attempt_id,
-          test_answer_id: entry.test_answer_id,
+          answer_id: entry.answer_id,
+          test_id: entry.test_id,
+          question_id: entry.question_id,
           status: ReviewStatus.PENDING,
         })));
 
@@ -316,7 +320,7 @@ export class EvaluationService {
         evaluated_at: new Date().toISOString(),
         is_manual_review: false,
       })
-      .eq('id', reviewItem.test_answer_id);
+      .eq('id', reviewItem.answer_id);
 
     if (updateAnswerError) throw updateAnswerError;
 
@@ -380,17 +384,23 @@ export class EvaluationService {
     const totalQuestions = answers.length;
     const correctAnswers = answers.filter((a) => a.is_correct === true).length;
     const accuracy = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 10000) / 100 : 0;
+    const percentage = totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 10000) / 100 : 0;
 
     const rank = await this.calculateRank(attempt.test_id, obtainedMarks, attemptId);
     const topicAnalysis = this.buildTopicAnalysis(answers);
     const questionAnalysis = this.buildQuestionAnalysis(answers);
+    const passingMarks = attempt.tests?.passing_marks ?? 0;
 
     const payload = {
       attempt_id: attemptId,
+      test_id: attempt.test_id,
+      user_id: attempt.user_id,
       obtained_marks: obtainedMarks,
       total_marks: totalMarks,
+      percentage,
       accuracy,
       rank,
+      passed: obtainedMarks >= passingMarks,
       topic_analysis: topicAnalysis,
       question_analysis: questionAnalysis,
       published_at: new Date().toISOString(),
@@ -575,12 +585,12 @@ export class EvaluationService {
       test_id: testId,
       total_attempts: totalAttempts,
       average_score: Math.round(averageScore * 100) / 100,
-      highest,
-      lowest,
-      median,
+      highest_score: highest,
+      lowest_score: lowest,
+      median_score: median,
       pass_rate: passRate,
       average_accuracy: Math.round(averageAccuracy * 100) / 100,
-      average_duration: Math.round(averageDuration * 100) / 100,
+      average_duration_seconds: Math.round(averageDuration * 100) / 100,
       question_performance: questionPerformance,
       topic_performance: topicPerformance,
       batch_performance: batchPerformance,
