@@ -14,6 +14,11 @@ import {
   AlertCircle,
   Zap,
   Server,
+  Mail,
+  Clock,
+  RotateCw,
+  Send,
+  Timer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -24,8 +29,9 @@ import {
   type ErrorLogEntry,
   type EventLogEntry,
 } from '@/lib/api/observability';
+import { getEmailQueueStats, type EmailQueueStats } from '@/lib/api/email-logs';
 
-type Tab = 'errors' | 'events';
+type Tab = 'errors' | 'events' | 'email-queue';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'text-red-600 bg-red-50 border-red-200',
@@ -110,12 +116,16 @@ export default function AdminMonitoringPage() {
   const [eventsLimit] = useState(15);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
+  const [queueStats, setQueueStats] = useState<EmailQueueStats | null>(null);
+  const [loadingQueue, setLoadingQueue] = useState(false);
+
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   useEffect(() => { loadDashboard(); }, []);
 
   useEffect(() => {
     if (activeTab === 'errors') loadErrors(errorsPage);
+    if (activeTab === 'email-queue') loadQueueStats();
   }, [activeTab, errorsPage]);
 
   useEffect(() => {
@@ -144,6 +154,13 @@ export default function AdminMonitoringPage() {
     finally { setLoadingEvents(false); }
   };
 
+  const loadQueueStats = async () => {
+    setLoadingQueue(true);
+    try { setQueueStats(await getEmailQueueStats()); }
+    catch { setQueueStats(null); }
+    finally { setLoadingQueue(false); }
+  };
+
   const errorsTotalPages = Math.ceil(errorsTotal / errorsLimit);
   const eventsTotalPages = Math.ceil(eventsTotal / eventsLimit);
 
@@ -153,15 +170,18 @@ export default function AdminMonitoringPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Monitoring Dashboard</h1>
-        <p className="mt-1 text-sm text-text-muted">System observability, error tracking, and event logging</p>
+        <p className="mt-1 text-sm text-text-muted">System observability, error tracking, event logging, and email queue monitoring</p>
       </div>
 
-      <div className="flex gap-1 rounded-xl border border-surface-border bg-surface-card p-1 w-fit">
+      <div className="flex gap-1 rounded-xl border border-surface-border bg-surface-card p-1 w-fit flex-wrap">
         <button onClick={() => setActiveTab('errors')} className={cn('flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors', activeTab === 'errors' ? 'bg-brand-navy text-white shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-surface-muted')}>
           <AlertTriangle className="h-4 w-4" />Error Log
         </button>
         <button onClick={() => setActiveTab('events')} className={cn('flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors', activeTab === 'events' ? 'bg-brand-navy text-white shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-surface-muted')}>
           <Activity className="h-4 w-4" />Event Log
+        </button>
+        <button onClick={() => setActiveTab('email-queue')} className={cn('flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors', activeTab === 'email-queue' ? 'bg-brand-navy text-white shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-surface-muted')}>
+          <Mail className="h-4 w-4" />Email Queue
         </button>
       </div>
 
@@ -357,6 +377,91 @@ export default function AdminMonitoringPage() {
                 </button>
                 <button onClick={() => setEventsPage((p) => Math.min(eventsTotalPages, p + 1))} disabled={eventsPage >= eventsTotalPages} className={cn('flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors', eventsPage >= eventsTotalPages ? 'border-surface-border text-text-muted cursor-not-allowed' : 'border-surface-border text-text-secondary hover:bg-surface-muted hover:text-text-primary')}>
                   Next<ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'email-queue' && (
+        <div className="space-y-6">
+          {loadingQueue ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
+            </div>
+          ) : queueStats ? (
+            <>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                <SummaryCard title="In Queue" value={queueStats.inQueue} icon={Timer} color="bg-purple-600" />
+                <SummaryCard title="Pending" value={queueStats.pending} icon={Clock} color="bg-amber-500" />
+                <SummaryCard title="Retrying" value={queueStats.retrying} icon={RotateCw} color="bg-blue-600" />
+                <SummaryCard title="Failed" value={queueStats.failed} icon={XCircle} color="bg-red-600" />
+                <SummaryCard title="Total" value={queueStats.total} icon={Send} color="bg-brand-navy" />
+              </div>
+
+              {queueStats.inQueue > 0 && (
+                <div className="rounded-xl border border-surface-border bg-surface-card p-6">
+                  <h2 className="mb-4 text-lg font-semibold text-text-primary">Queue Status</h2>
+                  <div className="space-y-3">
+                    {queueStats.pending > 0 && (
+                      <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                        <Clock className="h-5 w-5 text-amber-600" />
+                        <div>
+                          <p className="text-sm font-medium text-amber-800">{queueStats.pending} emails pending processing</p>
+                          <p className="text-xs text-amber-600">These emails are awaiting delivery attempt</p>
+                        </div>
+                      </div>
+                    )}
+                    {queueStats.retrying > 0 && (
+                      <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                        <RotateCw className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-800">{queueStats.retrying} emails currently retrying</p>
+                          <p className="text-xs text-blue-600">Failed emails being retried after admin action</p>
+                        </div>
+                      </div>
+                    )}
+                    {queueStats.failed > 0 && (
+                      <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+                        <XCircle className="h-5 w-5 text-red-600" />
+                        <div>
+                          <p className="text-sm font-medium text-red-800">{queueStats.failed} emails permanently failed</p>
+                          <p className="text-xs text-red-600">These may need investigation. Visit Email Center for details.</p>
+                        </div>
+                      </div>
+                    )}
+                    {queueStats.inQueue === 0 && (
+                      <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                        <div>
+                          <p className="text-sm font-medium text-emerald-800">Queue is clear</p>
+                          <p className="text-xs text-emerald-600">No pending or retrying emails in the queue</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-surface-border bg-surface-card p-6">
+                <h2 className="text-lg font-semibold text-text-primary mb-2">Email Queue Summary</h2>
+                <p className="text-sm text-text-muted">
+                  The email queue shows real-time state of all email deliveries. Use the{' '}
+                  <a href="/admin/email-logs" className="text-brand-600 underline hover:text-brand-700">
+                    Email Center
+                  </a>{' '}
+                  to view details, retry failed emails, and monitor delivery analytics.
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border border-surface-border bg-surface-card p-6">
+              <div className="text-center py-8">
+                <Mail className="mx-auto h-8 w-8 text-text-muted" />
+                <p className="mt-2 text-sm text-text-secondary">Failed to load email queue stats</p>
+                <button onClick={loadQueueStats} className="mt-3 text-sm font-medium text-brand-600 underline hover:text-brand-700">
+                  Retry
                 </button>
               </div>
             </div>

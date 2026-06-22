@@ -21,6 +21,7 @@ export const ROUTES = {
     PERFORMANCE: '/admin/performance',
     ANNOUNCEMENTS: '/admin/announcements',
     AUDIT_LOGS: '/admin/audit-logs',
+    EMAIL_LOGS: '/admin/email-logs',
   },
   STUDENT: {
     HOME: '/student',
@@ -91,4 +92,9 @@ export const API_ROUTES = {
   CERTIFICATE_STATUS: '/certificates',
   // Phase 7E: Audit
   ADMIN_AUDIT_LOGS: '/admin/audit-logs',
+  // Phase 7.1: Email Delivery Center
+  EMAIL_LOGS: '/email-logs',
+  EMAIL_LOGS_STATS: '/email-logs/stats',
+  EMAIL_LOGS_ANALYTICS: '/email-logs/analytics',
+  EMAIL_LOGS_QUEUE: '/email-logs/queue',
 } as const;

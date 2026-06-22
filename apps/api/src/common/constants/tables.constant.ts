@@ -66,4 +66,9 @@ export const TABLES = {
   CERTIFICATE_VERIFICATIONS: 'certificate_verifications',
   // Phase 7E: Audit
   AUDIT_LOGS: 'audit_logs',
+  EMAIL_LOGS: 'email_logs',
+  // Phase 7.1b: Email Hardening
+  EMAIL_DELIVERY_EVENTS: 'email_delivery_events',
+  EMAIL_SUPPRESSIONS: 'email_suppressions',
+  EMAIL_TEMPLATES: 'email_templates',
 } as const;

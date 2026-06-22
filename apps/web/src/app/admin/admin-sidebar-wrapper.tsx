@@ -24,6 +24,7 @@ import {
   Gauge,
   Megaphone,
   ScrollText,
+  Mail,
 } from 'lucide-react';
 
 const navItems = [
@@ -43,6 +44,7 @@ const navItems = [
   { label: 'Performance', href: ROUTES.ADMIN.PERFORMANCE, icon: Gauge },
   { label: 'Announcements', href: ROUTES.ADMIN.ANNOUNCEMENTS, icon: Megaphone },
   { label: 'Audit Logs', href: ROUTES.ADMIN.AUDIT_LOGS, icon: ScrollText },
+  { label: 'Email Center', href: ROUTES.ADMIN.EMAIL_LOGS, icon: Mail },
 ];
 
 export function AdminSidebarWrapper() {
