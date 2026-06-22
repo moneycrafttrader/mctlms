@@ -68,7 +68,7 @@ export class AttemptsController {
   }
 
   @Get(':id/timer')
-  getAttemptTimer(@Param('id') id: string) {
-    return this.attemptsService.getAttemptTimer(id);
+  getAttemptTimer(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.attemptsService.getAttemptTimer(id, user.id);
   }
 }

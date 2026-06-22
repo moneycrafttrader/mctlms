@@ -299,21 +299,23 @@ export class AttemptsService {
     return { items: data ?? [], total: count ?? 0, page, limit };
   }
 
-  async getAttemptTimer(attemptId: string) {
+  async getAttemptTimer(attemptId: string, userId: string) {
+    // Verify ownership first — prevents Redis cache leak for unowned attempts
+    const { data: attempt, error } = await this.supabaseService.client
+      .from(TABLES.TEST_ATTEMPTS)
+      .select('time_remaining_seconds, started_at, user_id, test:test_id(duration_minutes)')
+      .eq('id', attemptId)
+      .single();
+
+    if (error || !attempt) throw new NotFoundException('Attempt not found');
+    if (attempt.user_id !== userId) throw new ForbiddenException('Access denied');
+
     const key = REDIS_KEYS.attemptTimer(attemptId);
     const cached = await this.redis.get(key);
 
     if (cached !== null) {
       return { timeRemainingSeconds: parseInt(cached, 10) };
     }
-
-    const { data: attempt, error } = await this.supabaseService.client
-      .from(TABLES.TEST_ATTEMPTS)
-      .select('time_remaining_seconds, started_at, test:test_id(duration_minutes)')
-      .eq('id', attemptId)
-      .single();
-
-    if (error || !attempt) throw new NotFoundException('Attempt not found');
 
     if (attempt.time_remaining_seconds !== null) {
       return { timeRemainingSeconds: attempt.time_remaining_seconds };
