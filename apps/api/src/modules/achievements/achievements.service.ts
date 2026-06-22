@@ -274,11 +274,11 @@ export class AchievementsService {
       });
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
-      const pdfBuffer = await page.pdf({
+      const pdfBuffer = Buffer.from(await page.pdf({
         format: 'A4',
         margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
         printBackground: true,
-      });
+      }));
 
       const pdfPath = `certificates/${certificateId}.pdf`;
       await this.supabaseService.client
