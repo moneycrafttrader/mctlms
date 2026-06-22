@@ -50,10 +50,7 @@ export class ResultsService {
       throw new NotFoundException('Result not found');
     }
 
-    // If show_result_immediately is false and not yet published, deny
-    if (!test.show_result_immediately && result.status !== 'published') {
-      throw new ForbiddenException('Result has not been published yet');
-    }
+    // Results are only created on publish, so existence implies published
 
     return {
       obtained_marks: result.obtained_marks,
@@ -127,7 +124,6 @@ export class ResultsService {
         profile:${TABLES.PROFILES}!user_id(id, name, email)
       `, { count: 'exact' })
       .eq('test_id', testId)
-      .eq('status', 'published')
       .order(orderColumn, { ascending: true })
       .range(from, to);
 
@@ -187,7 +183,6 @@ export class ResultsService {
         test:${TABLES.TESTS}(id, title)
       `)
       .eq('user_id', userId)
-      .eq('status', 'published')
       .order('published_at', { ascending: false });
 
     if (error) throw error;
@@ -261,20 +256,17 @@ export class ResultsService {
         // Total published results
         this.supabaseService.client
           .from(TABLES.TEST_RESULTS)
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'published'),
+          .select('id', { count: 'exact', head: true }),
 
         // All published results for aggregation
         this.supabaseService.client
           .from(TABLES.TEST_RESULTS)
-          .select('percentage, passed, user_id')
-          .eq('status', 'published'),
+          .select('percentage, passed, user_id'),
 
         // Distinct students who attempted tests
         this.supabaseService.client
           .from(TABLES.TEST_RESULTS)
-          .select('user_id')
-          .eq('status', 'published'),
+          .select('user_id'),
       ]);
 
     const totalTests = (testCount as any).count ?? 0;
@@ -304,7 +296,6 @@ export class ResultsService {
           passed,
           profile:${TABLES.PROFILES}!user_id(id, batch_id)
         `)
-        .eq('status', 'published')
         .eq('profile.batch_id', options.batchId);
 
       if (batchResults && batchResults.length > 0) {

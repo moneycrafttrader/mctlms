@@ -48,10 +48,14 @@ export class DeviceService {
     this.redis = redisService.getOrThrow();
   }
 
+  private stripVersion(value: string): string {
+    return value.replace(/[\d.]+/g, '').trim();
+  }
+
   computeFingerprintHash(info: DeviceInfo): string {
     const raw = [
-      info.browser ?? '',
-      info.os ?? '',
+      this.stripVersion(info.browser ?? ''),
+      this.stripVersion(info.os ?? ''),
       info.screenResolution ?? '',
       info.timezone ?? '',
       info.language ?? '',

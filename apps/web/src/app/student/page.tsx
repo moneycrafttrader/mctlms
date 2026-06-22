@@ -13,21 +13,17 @@ export default async function StudentDashboardPage() {
   let recordings: StudentVideo[] = [];
   let results: unknown[] = [];
 
-  try {
-    const [coursesResult, sessionsResult, recordingsResult, resultsResult] = await Promise.all([
-      getMyCourses(),
-      getMySessions(),
-      getMyVideos(),
-      getMyResults().catch(() => [] as unknown[]),
-    ]);
-    courses = coursesResult;
-    upcoming = sessionsResult.upcoming ?? [];
-    past = sessionsResult.past ?? [];
-    recordings = recordingsResult;
-    results = resultsResult;
-  } catch {
-    // API unavailable — render with empty state
-  }
+  const [coursesResult, sessionsResult, recordingsResult, resultsResult] = await Promise.all([
+    getMyCourses().catch(() => [] as StudentCourse[]),
+    getMySessions().catch(() => ({ upcoming: [], past: [] }) as { upcoming: LiveSession[]; past: (LiveSession & { attendanceStatus?: string })[] }),
+    getMyVideos().catch(() => [] as StudentVideo[]),
+    getMyResults().catch(() => [] as unknown[]),
+  ]);
+  courses = coursesResult;
+  upcoming = sessionsResult.upcoming ?? [];
+  past = sessionsResult.past ?? [];
+  recordings = recordingsResult;
+  results = resultsResult;
 
   const nextClass = upcoming.length > 0
     ? upcoming.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())[0]
