@@ -131,3 +131,25 @@ export interface BatchVideo {
 export async function getBatchVideos(batchId: string) {
   return fetchApi<BatchVideo[]>(`${API_ROUTES.RECORDINGS}/batch/${batchId}`);
 }
+
+export interface StudentCurriculumItem {
+  id: string;
+  recordingId: string;
+  title: string;
+  description?: string;
+  durationSeconds?: number;
+  categoryName: string;
+  moduleName?: string;
+  sortOrder: number;
+}
+
+export interface StudentCurriculumCategory {
+  category: string;
+  items: StudentCurriculumItem[];
+}
+
+export async function getStudentBatchCurriculum(batchId: string) {
+  return fetchApi<StudentCurriculumCategory[]>(
+    `${API_ROUTES.BATCHES}/${batchId}/curriculum`,
+  );
+}

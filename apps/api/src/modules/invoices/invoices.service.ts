@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import * as path from 'path';
@@ -138,7 +139,7 @@ export class InvoicesService {
       return Buffer.from(buffer);
     } catch (err: any) {
       this.logger.error(`PDF generation failed: ${err.message}`);
-      throw new BadRequestException('Failed to generate PDF. Is Chrome/Puppeteer installed?');
+      throw new InternalServerErrorException('Failed to generate PDF. Is Chrome/Puppeteer installed?');
     } finally {
       if (browser) {
         await browser.close();
@@ -285,6 +286,13 @@ export class InvoicesService {
     const student = pay.student;
     const course = pay.course;
 
+    // Null-safe labels for missing relations
+    const studentName = student?.name ?? 'Unknown Student';
+    const studentEmail = student?.email ?? 'unknown@email.com';
+    const courseName = course?.name ?? 'Unknown Course';
+    const studentId = student?.id ?? pay.student_id ?? 'unknown';
+    const courseId = course?.id ?? pay.course_id ?? 'unknown';
+
     // 2. Fetch business config
     const { data: bizCfg } = await this.supabaseService.client
       .from(TABLES.BUSINESS_CONFIG)
@@ -310,9 +318,9 @@ export class InvoicesService {
     const html = template({
       receiptNumber,
       date: dateStr,
-      studentName: student.name,
-      studentEmail: student.email,
-      courseName: course.name,
+      studentName,
+      studentEmail,
+      courseName,
       installmentNumber: pay.installment_id ? `Installment` : undefined,
       paymentMethod: pay.payment_method,
       transactionId: pay.transaction_id,
@@ -331,7 +339,7 @@ export class InvoicesService {
     const pdfBuffer = await this.generatePdf(html);
 
     // 6. Upload to storage
-    const storagePath = `receipts/${student.id}/${receiptNumber}.pdf`;
+    const storagePath = `receipts/${studentId}/${receiptNumber}.pdf`;
     const pdfUrl = await this.uploadPdf(pdfBuffer, storagePath);
 
     // 7. Insert receipt record
@@ -339,8 +347,8 @@ export class InvoicesService {
       .from(TABLES.RECEIPTS)
       .insert({
         receipt_number: receiptNumber,
-        student_id: student.id,
-        course_id: course.id,
+        student_id: studentId,
+        course_id: courseId,
         payment_id: paymentId,
         installment_id: pay.installment_id ?? null,
         amount: pay.amount,
@@ -413,6 +421,13 @@ export class InvoicesService {
     const student = pay.student;
     const course = pay.course;
 
+    // Null-safe labels for missing relations
+    const studentName = student?.name ?? 'Unknown Student';
+    const studentEmail = student?.email ?? 'unknown@email.com';
+    const courseName = course?.name ?? 'Unknown Course';
+    const studentId = student?.id ?? pay.student_id ?? 'unknown';
+    const courseId = course?.id ?? pay.course_id ?? 'unknown';
+
     // 2. Fetch business config
     const { data: bizCfg } = await this.supabaseService.client
       .from(TABLES.BUSINESS_CONFIG)
@@ -438,9 +453,9 @@ export class InvoicesService {
     const html = template({
       invoiceNumber,
       date: dateStr,
-      studentName: student.name,
-      studentEmail: student.email,
-      courseName: course.name,
+      studentName,
+      studentEmail,
+      courseName,
       paymentMethod: pay.payment_method,
       transactionId: pay.transaction_id,
       baseAmount: baseAmount.toFixed(2),
@@ -458,7 +473,7 @@ export class InvoicesService {
     const pdfBuffer = await this.generatePdf(html);
 
     // 6. Upload to storage
-    const storagePath = `invoices/${student.id}/${invoiceNumber}.pdf`;
+    const storagePath = `invoices/${studentId}/${invoiceNumber}.pdf`;
     const pdfUrl = await this.uploadPdf(pdfBuffer, storagePath);
 
     // 7. Insert invoice record
@@ -469,8 +484,8 @@ export class InvoicesService {
       .from(TABLES.INVOICES)
       .insert({
         invoice_number: invoiceNumber,
-        student_id: student.id,
-        course_id: course.id,
+        student_id: studentId,
+        course_id: courseId,
         payment_id: paymentId,
         subtotal: subTotal,
         cgst_amount: cgst,

@@ -54,8 +54,14 @@ export class RecordingsController {
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get('admin/recordings')
-  findAll() {
-    return this.recordingsService.findAll();
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.recordingsService.findAll(
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
   }
 
   @Roles(UserRole.ADMIN)
@@ -114,8 +120,11 @@ export class RecordingsController {
   // ── Student: Batch Recordings ──────────────────────────────
 
   @Get('recordings/batch/:batchId')
-  getBatchRecordings(@Param('batchId') batchId: string) {
-    return this.recordingsService.getBatchRecordings(batchId);
+  getBatchRecordings(
+    @Param('batchId') batchId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.recordingsService.getBatchRecordings(batchId, user.id);
   }
 
   // ── Student: My Recordings ─────────────────────────────────
@@ -240,8 +249,11 @@ export class RecordingsController {
   }
 
   @Get('videos/batch/:batchId')
-  legacyGetBatchVideos(@Param('batchId') batchId: string) {
-    return this.recordingsService.getBatchRecordings(batchId);
+  legacyGetBatchVideos(
+    @Param('batchId') batchId: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.recordingsService.getBatchRecordings(batchId, user.id);
   }
 
   @Get('videos/my')

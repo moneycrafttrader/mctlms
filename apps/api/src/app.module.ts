@@ -42,6 +42,8 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { PlaybackModule } from './modules/playback/playback.module';
 import { ScreenRecordingModule } from './modules/screen-recording/screen-recording.module';
 import { QuestionsModule } from './modules/questions/questions.module';
+import { OutboxModule } from './modules/outbox/outbox.module';
+import { BatchCurriculumModule } from './modules/batch-curriculum/batch-curriculum.module';
 import { AttemptsModule } from './modules/attempts/attempts.module';
 import { EvaluationModule } from './modules/evaluation/evaluation.module';
 import { ResultsModule } from './modules/results/results.module';
@@ -98,6 +100,7 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     // ── Feature modules ───────────────────────────────────────
     AuthModule,
     UsersModule,
+    BatchCurriculumModule,
     CoursesModule,
     BatchesModule,
     LiveSessionsModule,
@@ -110,6 +113,7 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     MuxModule,
     BulkUploadModule,
     PaymentsModule,
+    OutboxModule,
     InvoicesModule,
     BusinessConfigModule,
     DeviceModule,

@@ -19,6 +19,11 @@ import {
   Injectable,
   BadRequestException,
   InternalServerErrorException,
+  UnauthorizedException,
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+  HttpException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -127,10 +132,26 @@ export class ZoomService {
       });
       return data;
     } catch (error: any) {
+      const status = error.response?.status;
       const zoomMessage =
         error.response?.data?.message || error.message || 'Unknown Zoom error';
-      this.logger.error(`Zoom API error [${method} ${path}]: ${zoomMessage}`);
-      throw new BadRequestException(`Zoom API: ${zoomMessage}`);
+      this.logger.error(`Zoom API error [${method} ${path}]: ${status} ${zoomMessage}`);
+
+      switch (status) {
+        case 401:
+          throw new UnauthorizedException(`Zoom API: ${zoomMessage}`);
+        case 403:
+          throw new ForbiddenException(`Zoom API: ${zoomMessage}`);
+        case 404:
+          throw new NotFoundException(`Zoom API: ${zoomMessage}`);
+        case 429:
+          throw new HttpException(`Zoom API rate limited: ${zoomMessage}`, 429);
+        default:
+          if (status && status >= 500) {
+            throw new ServiceUnavailableException(`Zoom API: ${zoomMessage}`);
+          }
+          throw new InternalServerErrorException(`Zoom API: ${zoomMessage}`);
+      }
     }
   }
 

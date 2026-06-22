@@ -47,4 +47,5 @@ export const TABLES = {
   TEST_REVIEW_QUEUE: 'test_review_queue',
   TEST_RESULTS: 'test_results',
   TEST_ANALYTICS_SNAPSHOTS: 'test_analytics_snapshots',
+  BATCH_RECORDING_CURRICULUM: 'batch_recording_curriculum',
 } as const;

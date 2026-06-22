@@ -105,7 +105,15 @@ export class AttemptsService {
 
     const questions = test.test_question_bank ?? [];
     if (questions.length > 0) {
-      const answerRows = questions.map((q: any) => ({
+      const ordered = [...questions];
+      if (test.shuffle_questions) {
+        for (let i = ordered.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+        }
+      }
+
+      const answerRows = ordered.map((q: any, idx: number) => ({
         attempt_id: attempt.id,
         question_id: q.question_bank_id,
         question_type: q.question_bank?.question_type ?? 'single_choice',
@@ -113,6 +121,7 @@ export class AttemptsService {
         marks_awarded: 0,
         is_correct: false,
         is_manual_review: false,
+        sort_order: idx,
       }));
 
       const { error: answersError } = await this.supabaseService.client
@@ -388,11 +397,8 @@ export class AttemptsService {
   private maybeShuffleQuestions(attempt: any) {
     if (!attempt.test_answers) return attempt.test_answers;
     const answers = [...attempt.test_answers];
-    if (attempt.test?.shuffle_questions) {
-      for (let i = answers.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [answers[i], answers[j]] = [answers[j], answers[i]];
-      }
+    if (answers.length > 0 && 'sort_order' in answers[0]) {
+      answers.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
     return answers;
   }

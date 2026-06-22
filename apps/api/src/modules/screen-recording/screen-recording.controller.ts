@@ -38,9 +38,15 @@ export class ScreenRecordingController {
   async getViolations(
     @Query('userId') userId?: string,
     @Query('contextType') contextType?: string,
+    @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.screenRecordingService.getViolations(userId, contextType, limit ? parseInt(limit, 10) : 200);
+    return this.screenRecordingService.getViolations({
+      userId,
+      contextType,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+    });
   }
 
   @Roles(UserRole.ADMIN)

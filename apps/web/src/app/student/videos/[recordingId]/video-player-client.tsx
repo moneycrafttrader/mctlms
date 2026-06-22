@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Calendar } from 'lucide-react';
+import Hls from 'hls.js';
 import { usePlaybackToken } from '@/hooks/usePlaybackToken';
 import { WatermarkOverlay } from '@/components/shared/WatermarkOverlay';
 import { ScreenRecordingDetector } from '@/components/shared/ScreenRecordingDetector';
@@ -16,6 +17,7 @@ interface Props {
 export function VideoPlayerClient({ recordingId, sessionId, title, date }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastReportRef = useRef(0);
+  const hlsRef = useRef<Hls | null>(null);
 
   const {
     playbackUrl,
@@ -30,10 +32,33 @@ export function VideoPlayerClient({ recordingId, sessionId, title, date }: Props
   });
 
   useEffect(() => {
-    if (playbackUrl && videoRef.current) {
-      videoRef.current.src = playbackUrl;
-      videoRef.current.load();
+    const video = videoRef.current;
+    if (!playbackUrl || !video) return;
+
+    const isSafari = typeof window !== 'undefined' && (
+      /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    );
+
+    if (isSafari && video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = playbackUrl;
+    } else if (Hls.isSupported()) {
+      if (hlsRef.current) hlsRef.current.destroy();
+      const hls = new Hls();
+      hlsRef.current = hls;
+      hls.loadSource(playbackUrl);
+      hls.attachMedia(video);
+    } else {
+      video.src = playbackUrl;
     }
+
+    video.load();
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
   }, [playbackUrl]);
 
   const handlePlay = useCallback(() => {

@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { AttemptStatus, ReviewStatus, QuestionType } from '@lms/shared-types';
+import { Transaction } from '../../common/utils/transaction.util';
 
 export interface AutoGradeSummary {
   total: number;
@@ -311,42 +312,102 @@ export class EvaluationService {
 
     if (reviewError || !reviewItem) throw new NotFoundException('Review queue item not found');
 
-    const { error: updateAnswerError } = await this.supabaseService.client
-      .from(TABLES.TEST_ANSWERS)
-      .update({
-        marks_awarded: dto.marksAwarded,
-        feedback: dto.feedback ?? null,
-        evaluated_by: evaluatedBy,
-        evaluated_at: new Date().toISOString(),
-        is_manual_review: false,
-      })
-      .eq('id', reviewItem.answer_id);
-
-    if (updateAnswerError) throw updateAnswerError;
-
-    const { error: updateQueueError } = await this.supabaseService.client
-      .from(TABLES.TEST_REVIEW_QUEUE)
-      .update({
-        status: ReviewStatus.REVIEWED,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', reviewId);
-
-    if (updateQueueError) throw updateQueueError;
-
+    const answerBefore = reviewItem.test_answers;
+    const oldStatus = reviewItem.status;
     const attemptId = reviewItem.attempt_id;
+
+    const tx = new Transaction();
+    await tx.run([
+      {
+        name: 'update test_answer',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.TEST_ANSWERS)
+            .update({
+              marks_awarded: dto.marksAwarded,
+              feedback: dto.feedback ?? null,
+              evaluated_by: evaluatedBy,
+              evaluated_at: new Date().toISOString(),
+              is_manual_review: false,
+            })
+            .eq('id', reviewItem.answer_id);
+          if (error) throw error;
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.TEST_ANSWERS)
+            .update({
+              marks_awarded: answerBefore.marks_awarded,
+              feedback: answerBefore.feedback,
+              evaluated_by: answerBefore.evaluated_by,
+              evaluated_at: answerBefore.evaluated_at,
+              is_manual_review: answerBefore.is_manual_review,
+            })
+            .eq('id', reviewItem.answer_id);
+        },
+      },
+      {
+        name: 'update review_queue status',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.TEST_REVIEW_QUEUE)
+            .update({
+              status: ReviewStatus.REVIEWED,
+              reviewed_at: new Date().toISOString(),
+            })
+            .eq('id', reviewId);
+          if (error) throw error;
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.TEST_REVIEW_QUEUE)
+            .update({
+              status: oldStatus,
+              reviewed_at: null,
+            })
+            .eq('id', reviewId);
+        },
+      },
+    ]);
+
     const allManualReviewed = await this.checkAllManualReviewsComplete(attemptId);
     if (allManualReviewed) {
+      const { data: attemptBefore } = await this.supabaseService.client
+        .from(TABLES.TEST_ATTEMPTS)
+        .select('status')
+        .eq('id', attemptId)
+        .single();
+
+      const prevStatus = (attemptBefore as any)?.status;
+
       const { error: statusError } = await this.supabaseService.client
         .from(TABLES.TEST_ATTEMPTS)
         .update({ status: AttemptStatus.EVALUATED, updated_at: new Date().toISOString() })
         .eq('id', attemptId);
 
-      if (statusError) throw statusError;
+      if (statusError) {
+        await this.supabaseService.client
+          .from(TABLES.TEST_ANSWERS)
+          .update({
+            is_manual_review: answerBefore.is_manual_review,
+          })
+          .eq('id', reviewItem.answer_id);
 
-      await this.publishResults(attemptId).catch((err) =>
-        this.logger.error('Auto-publish after review failed', err),
-      );
+        await this.supabaseService.client
+          .from(TABLES.TEST_REVIEW_QUEUE)
+          .update({ status: oldStatus, reviewed_at: null })
+          .eq('id', reviewId);
+
+        throw statusError;
+      }
+
+      await this.publishResults(attemptId).catch(async (err) => {
+        this.logger.error('Auto-publish after review failed', err);
+        await this.supabaseService.client
+          .from(TABLES.TEST_ATTEMPTS)
+          .update({ status: prevStatus, updated_at: new Date().toISOString() })
+          .eq('id', attemptId);
+      });
     }
 
     return { id: reviewId, status: ReviewStatus.REVIEWED };
@@ -412,30 +473,64 @@ export class EvaluationService {
       .eq('attempt_id', attemptId)
       .maybeSingle();
 
-    if (existing) {
-      const { error: updateError } = await this.supabaseService.client
-        .from(TABLES.TEST_RESULTS)
-        .update(payload)
-        .eq('id', existing.id);
+    let resultId: string | null = null;
+    let isNewResult = false;
 
-      if (updateError) throw updateError;
-    } else {
-      const { error: insertError } = await this.supabaseService.client
-        .from(TABLES.TEST_RESULTS)
-        .insert(payload);
-
-      if (insertError) throw insertError;
-    }
-
-    const { error: statusError } = await this.supabaseService.client
-      .from(TABLES.TEST_ATTEMPTS)
-      .update({
-        status: AttemptStatus.PUBLISHED,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', attemptId);
-
-    if (statusError) throw statusError;
+    const tx = new Transaction();
+    await tx.run([
+      {
+        name: 'upsert test_results',
+        execute: async () => {
+          if (existing) {
+            resultId = existing.id;
+            const { error } = await this.supabaseService.client
+              .from(TABLES.TEST_RESULTS)
+              .update(payload)
+              .eq('id', existing.id);
+            if (error) throw error;
+          } else {
+            isNewResult = true;
+            const { data, error } = await this.supabaseService.client
+              .from(TABLES.TEST_RESULTS)
+              .insert(payload)
+              .select('id')
+              .single();
+            if (error) throw error;
+            resultId = data.id;
+          }
+        },
+        rollback: async () => {
+          if (isNewResult && resultId) {
+            await this.supabaseService.client
+              .from(TABLES.TEST_RESULTS)
+              .delete()
+              .eq('id', resultId);
+          }
+        },
+      },
+      {
+        name: 'update attempt status to PUBLISHED',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.TEST_ATTEMPTS)
+            .update({
+              status: AttemptStatus.PUBLISHED,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', attemptId);
+          if (error) throw error;
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.TEST_ATTEMPTS)
+            .update({
+              status: attempt.status,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', attemptId);
+        },
+      },
+    ]);
 
     await this.calculateAnalytics(attempt.test_id).catch((err) =>
       this.logger.error('Analytics recalculation failed', err),
@@ -597,26 +692,11 @@ export class EvaluationService {
       calculated_at: new Date().toISOString(),
     };
 
-    const { data: existingSnapshot } = await this.supabaseService.client
+    const { error: insertError } = await this.supabaseService.client
       .from(TABLES.TEST_ANALYTICS_SNAPSHOTS)
-      .select('id')
-      .eq('test_id', testId)
-      .maybeSingle();
+      .insert(snapshot);
 
-    if (existingSnapshot) {
-      const { error: updateError } = await this.supabaseService.client
-        .from(TABLES.TEST_ANALYTICS_SNAPSHOTS)
-        .update(snapshot)
-        .eq('id', existingSnapshot.id);
-
-      if (updateError) throw updateError;
-    } else {
-      const { error: insertError } = await this.supabaseService.client
-        .from(TABLES.TEST_ANALYTICS_SNAPSHOTS)
-        .insert(snapshot);
-
-      if (insertError) throw insertError;
-    }
+    if (insertError) throw insertError;
 
     return snapshot;
   }

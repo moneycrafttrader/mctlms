@@ -138,6 +138,7 @@ export class ScreenRecordingService {
         total_violations: score.total_violations,
         violations_24h: score.violations_24h,
         violations_7d: score.violations_7d,
+        last_violation_at: new Date().toISOString(),
         calculated_at: new Date().toISOString(),
       }, { onConflict: 'user_id' });
 
@@ -192,18 +193,34 @@ export class ScreenRecordingService {
     };
   }
 
-  async getViolations(userId?: string, contextType?: string, limit = 200): Promise<any[]> {
-    let query = this.supabaseService.client
+  async getViolations(options?: { userId?: string; contextType?: string; page?: number; limit?: number }): Promise<{ items: any[]; total: number; page: number; limit: number }> {
+    const page = options?.page ?? 1;
+    const limit = Math.min(options?.limit ?? 50, 100);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let countQuery = this.supabaseService.client
+      .from(TABLES.SCREEN_RECORDING_VIOLATIONS)
+      .select('*', { count: 'exact', head: true });
+
+    let dataQuery = this.supabaseService.client
       .from(TABLES.SCREEN_RECORDING_VIOLATIONS)
       .select('*, profiles!inner(id, name, email)')
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
-    if (userId) query = query.eq('user_id', userId);
-    if (contextType) query = query.eq('context_type', contextType);
+    if (options?.userId) {
+      countQuery = countQuery.eq('user_id', options.userId);
+      dataQuery = dataQuery.eq('user_id', options.userId);
+    }
+    if (options?.contextType) {
+      countQuery = countQuery.eq('context_type', options.contextType);
+      dataQuery = dataQuery.eq('context_type', options.contextType);
+    }
 
-    const { data } = await query;
-    return data ?? [];
+    const [{ count }, { data }] = await Promise.all([countQuery, dataQuery]);
+
+    return { items: data ?? [], total: count ?? 0, page, limit };
   }
 
   async getViolationCounters(userId?: string): Promise<any[]> {

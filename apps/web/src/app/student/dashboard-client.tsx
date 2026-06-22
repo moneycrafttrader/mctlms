@@ -21,6 +21,9 @@ import {
   Target,
   CheckCircle2,
   Medal,
+  CreditCard,
+  IndianRupee,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
@@ -32,6 +35,7 @@ import { ErrorBoundary } from '@/components/debug/ErrorBoundary';
 import { type LiveSession, requestJoinToken, getSessionJoinUrl } from '@/lib/api/live-sessions';
 import { type StudentCourse } from '@/lib/api/courses';
 import { type StudentVideo } from '@/lib/api/videos';
+import { type PaymentPlan } from '@/lib/api/payments';
 
 interface DashboardClientProps {
   name: string;
@@ -42,6 +46,7 @@ interface DashboardClientProps {
   recordings: StudentVideo[];
   results: unknown[];
   pastSessions: (LiveSession & { attendanceStatus?: string })[];
+  paymentPlans: PaymentPlan[];
 }
 
 function getGreeting() {
@@ -124,7 +129,7 @@ function renderTrace(section: string): null {
   return null;
 }
 
-export function DashboardClient({ name, nextClass, upcoming, continueContent, courses, recordings, results, pastSessions }: DashboardClientProps) {
+export function DashboardClient({ name, nextClass, upcoming, continueContent, courses, recordings, results, pastSessions, paymentPlans }: DashboardClientProps) {
   const [greeting, setGreeting] = useState('');
   const [joining, setJoining] = useState(false);
   const [streak] = useState(3);
@@ -165,6 +170,24 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
   const lastResult = results.length > 0 ? (results[0] as Record<string, unknown>) : null;
   const totalWatchedSeconds = recordings.reduce((acc, r) => acc + (r.progress?.watched_seconds || 0), 0);
   const completedTests = results.length;
+
+  const now = new Date();
+  const overdueAmount = paymentPlans.reduce((sum, plan) => {
+    return sum + (plan.installments ?? []).reduce((s, inst) => {
+      if (inst.status === 'pending' && new Date(inst.due_date) < now) return s + inst.amount;
+      return s;
+    }, 0);
+  }, 0);
+  const upcomingDues = paymentPlans.reduce((sum, plan) => {
+    return sum + (plan.installments ?? []).reduce((s, inst) => {
+      if (inst.status === 'pending' && new Date(inst.due_date) >= now) return s + inst.amount;
+      return s;
+    }, 0);
+  }, 0);
+  const nextDueDate = paymentPlans
+    .flatMap((p) => (p.installments ?? []))
+    .filter((i) => i.status === 'pending')
+    .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())[0]?.due_date ?? null;
 
   renderTrace('Welcome Header');
   return (
@@ -353,6 +376,47 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
               </div>
             </div>
           </div>
+
+          {/* ── Payment Plans ── */}
+          {renderTrace('Payment Plans')}
+          {paymentPlans.length > 0 && (
+            <div className="animate-fade-in-up" style={{ animationDelay: '280ms' }}>
+              <h2 className="text-sm font-semibold text-text-primary mb-3">Payments</h2>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <Card padding="md">
+                  <div className="flex items-center gap-2">
+                    <IndianRupee className="h-4 w-4 text-emerald-500" />
+                    <span className="text-xs text-text-secondary">Upcoming Dues</span>
+                  </div>
+                  <p className="mt-1 text-lg font-bold text-text-primary">
+                    {formatCurrency(upcomingDues)}
+                  </p>
+                </Card>
+                {overdueAmount > 0 && (
+                  <Card padding="md" className="border-status-live/30">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-status-live" />
+                      <span className="text-xs text-text-secondary">Overdue</span>
+                    </div>
+                    <p className="mt-1 text-lg font-bold text-status-live">
+                      {formatCurrency(overdueAmount)}
+                    </p>
+                  </Card>
+                )}
+                {nextDueDate && (
+                  <Card padding="md">
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="h-4 w-4 text-brand-500" />
+                      <span className="text-xs text-text-secondary">Next Due Date</span>
+                    </div>
+                    <p className="mt-1 text-lg font-bold text-text-primary">
+                      {new Date(nextDueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </Card>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Recent Test ── */}
           {renderTrace('Recent Test')}

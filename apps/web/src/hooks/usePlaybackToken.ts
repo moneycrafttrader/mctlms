@@ -62,6 +62,11 @@ export function usePlaybackToken({
       sessionIdRef.current = result.sessionId;
     } catch (err: any) {
       const msg = err?.message || 'Failed to load video';
+      tokenRef.current = null;
+      sessionIdRef.current = null;
+      setPlaybackUrl(null);
+      setThumbnail(null);
+      setSessionId(null);
       setError(msg);
       onError?.(msg);
     } finally {

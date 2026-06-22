@@ -26,6 +26,9 @@ export interface Batch {
   start_date?: string;
   end_date?: string;
   created_at: string;
+  course?: { id: string; name: string };
+  studentCount?: number;
+  teacherCount?: number;
 }
 
 export interface CourseStats {
@@ -98,12 +101,46 @@ export async function createCourse(
 }
 
 /**
+ * Update a course by ID.
+ * PATCH /courses/:id
+ */
+export async function updateCourse(
+  id: string,
+  data: { name?: string; description?: string },
+) {
+  return fetchApi<Course>(`${API_ROUTES.COURSES}/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Duplicate a course (copies name, description, batches as inactive).
+ * POST /courses/:id/duplicate
+ */
+export async function duplicateCourse(id: string) {
+  return fetchApi<Course>(`${API_ROUTES.COURSES}/${id}/duplicate`, {
+    method: 'POST',
+  });
+}
+
+/**
  * Soft-delete a course (archive).
  * DELETE /courses/:id
  */
 export async function deleteCourse(id: string) {
   return fetchApi<Course>(`${API_ROUTES.COURSES}/${id}`, {
     method: 'DELETE',
+  });
+}
+
+/**
+ * Activate a previously archived course.
+ * PATCH /courses/:id/activate
+ */
+export async function activateCourse(id: string) {
+  return fetchApi<Course>(`${API_ROUTES.COURSES}/${id}/activate`, {
+    method: 'PATCH',
   });
 }
 
@@ -125,6 +162,14 @@ export interface StudentProfile {
   name: string;
   email: string;
   phone?: string;
+}
+
+/**
+ * Fetch a single batch by ID.
+ * GET /batches/:id
+ */
+export async function getBatch(id: string) {
+  return fetchApi<Batch>(`${API_ROUTES.BATCHES}/${id}`);
 }
 
 /**

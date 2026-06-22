@@ -78,6 +78,7 @@ export class TestsService {
     if (error) throw error;
 
     const sections = original.test_sections?.map((s: any) => ({
+      id: s.id,
       title: s.title,
       description: s.description,
       instructions: s.instructions,
@@ -106,7 +107,8 @@ export class TestsService {
     questions?: any[],
     batches?: any[],
   ) {
-    // Insert sections
+    // Insert sections — build oldSectionId → newSectionId map
+    const sectionIdMap = new Map<string, string>();
     if (sections?.length) {
       const { data: inserted } = await this.supabaseService.client
         .from(TABLES.TEST_SECTIONS)
@@ -120,29 +122,28 @@ export class TestsService {
         .select();
 
       if (inserted) {
-        for (const sec of inserted) {
-          for (const q of questions ?? []) {
-            if (q.sectionTitle && q.sectionTitle === sec.title) {
-              q.sectionId = sec.id;
-            }
-          }
+        for (let i = 0; i < inserted.length; i++) {
+          sectionIdMap.set(sections[i].id, inserted[i].id);
         }
       }
     }
 
-    // Insert question bank links
+    // Insert question bank links — reattach using sectionIdMap
     if (questions?.length) {
       await this.supabaseService.client
         .from(TABLES.TEST_QUESTION_BANK)
-        .insert(questions.map((q, i) => ({
-          test_id: testId,
-          question_bank_id: q.questionBankId,
-          marks: q.marks ?? 1,
-          negative_mark: q.negativeMark ?? 0,
-          sort_order: q.sortOrder ?? i,
-          section_id: q.sectionId ?? null,
-          is_compulsory: q.isCompulsory ?? false,
-        })));
+        .insert(questions.map((q, i) => {
+          const newSectionId = q.sectionId ? sectionIdMap.get(q.sectionId) : undefined;
+          return {
+            test_id: testId,
+            question_bank_id: q.questionBankId,
+            marks: q.marks ?? 1,
+            negative_mark: q.negativeMark ?? 0,
+            sort_order: q.sortOrder ?? i,
+            section_id: newSectionId ?? null,
+            is_compulsory: q.isCompulsory ?? false,
+          };
+        }));
     }
 
     // Insert batch assignments

@@ -1,17 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { createCourse } from '@/lib/api/courses';
+import { createCourse, updateCourse, type Course } from '@/lib/api/courses';
 
 interface CourseFormProps {
   onSuccess: () => void;
+  initialData?: Course;
 }
 
-export function CourseForm({ onSuccess }: CourseFormProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+export function CourseForm({ onSuccess, initialData }: CourseFormProps) {
+  const [name, setName] = useState(initialData?.name ?? '');
+  const [description, setDescription] = useState(initialData?.description ?? '');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const isEditing = !!initialData;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,12 +22,16 @@ export function CourseForm({ onSuccess }: CourseFormProps) {
     setSubmitting(true);
 
     try {
-      await createCourse({ name, description: description || undefined });
+      if (isEditing) {
+        await updateCourse(initialData.id, { name, description: description || undefined });
+      } else {
+        await createCourse({ name, description: description || undefined });
+      }
       setName('');
       setDescription('');
       onSuccess();
     } catch (err: any) {
-      setError(err.message || 'Failed to create course');
+      setError(err.message || 'Failed to save course');
     } finally {
       setSubmitting(false);
     }
@@ -70,7 +77,7 @@ export function CourseForm({ onSuccess }: CourseFormProps) {
         disabled={submitting}
         className="w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
       >
-        {submitting ? 'Creating...' : 'Create Course'}
+        {submitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Course'}
       </button>
     </form>
   );

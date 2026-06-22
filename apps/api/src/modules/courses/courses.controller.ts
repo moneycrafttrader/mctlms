@@ -75,6 +75,12 @@ export class CoursesController {
     return this.coursesService.update(id, dto);
   }
 
+  @Post(':id/duplicate')
+  @Roles(UserRole.ADMIN)
+  duplicate(@Param('id', ParseUUIDPipe) id: string) {
+    return this.coursesService.duplicate(id);
+  }
+
   @Patch(':id/deactivate')
   @Roles(UserRole.ADMIN)
   deactivate(@Param('id', ParseUUIDPipe) id: string) {

@@ -31,6 +31,7 @@ import { BatchesService } from '../batches/batches.service';
 import { ZoomService } from '../zoom/zoom.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
+import { Transaction } from '../../common/utils/transaction.util';
 import { CreateSessionDto } from './dto/create-session.dto';
 
 type JoinOutcome =
@@ -44,7 +45,7 @@ type JoinOutcome =
 @Injectable()
 export class LiveSessionsService {
   private readonly logger = new Logger(LiveSessionsService.name);
-  private readonly redis: Redis;
+  private readonly redis: Redis | null;
 
   constructor(
     private readonly supabaseService: SupabaseService,
@@ -52,7 +53,22 @@ export class LiveSessionsService {
     private readonly zoomService: ZoomService,
     redisService: RedisService,
   ) {
-    this.redis = redisService.getOrThrow();
+    try {
+      this.redis = redisService.getOrThrow();
+    } catch {
+      this.logger.warn('Redis unavailable — join token features will degrade gracefully');
+      this.redis = null;
+    }
+  }
+
+  private async safeRedis<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+    if (!this.redis) return fallback;
+    try {
+      return await fn();
+    } catch (err) {
+      this.logger.warn(`Redis operation failed: ${(err as Error).message}`);
+      return fallback;
+    }
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -138,18 +154,28 @@ export class LiveSessionsService {
       batch_id: batchId,
     }));
 
-    const { error: batchError } = await this.supabaseService.client
-      .from(TABLES.SESSION_BATCHES)
-      .insert(batchRecords);
-
-    if (batchError) {
-      this.logger.error(`Failed to link batches: ${batchError.message}`);
-      // Don't throw — the session exists but batch links failed; admin can retry
-    }
+    const tx = new Transaction();
+    await tx.run([
+      {
+        name: 'insert session batch links',
+        execute: async () => {
+          const { error: batchError } = await this.supabaseService.client
+            .from(TABLES.SESSION_BATCHES)
+            .insert(batchRecords);
+          if (batchError) throw batchError;
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.LIVE_SESSIONS)
+            .delete()
+            .eq('id', sessionId);
+        },
+      },
+    ]);
 
     // ── Step 6: Fetch all students from assigned batches ───────
-    // Use Promise.all to fetch students from all batches in parallel
-    const studentResults = await Promise.all(
+    // Use allSettled so one batch failure doesn't crash the entire operation
+    const studentResults = await Promise.allSettled(
       dto.batchIds.map((batchId) =>
         this.supabaseService.client
           .from(TABLES.BATCH_STUDENTS)
@@ -160,14 +186,19 @@ export class LiveSessionsService {
 
     // Flatten and deduplicate by user_id
     const studentMap = new Map<string, { id: string; name: string; email: string }>();
-    for (const result of studentResults) {
-      if (result.data) {
-        for (const item of result.data as any[]) {
+    const batchFailures: string[] = [];
+    for (let i = 0; i < studentResults.length; i++) {
+      const result = studentResults[i];
+      if (result.status === 'fulfilled' && result.value.data) {
+        for (const item of result.value.data as any[]) {
           const user = item.users;
           if (!studentMap.has(user.id)) {
             studentMap.set(user.id, user);
           }
         }
+      } else if (result.status === 'rejected') {
+        batchFailures.push(dto.batchIds[i]);
+        this.logger.warn(`Failed to fetch students for batch ${dto.batchIds[i]}: ${result.reason?.message || 'unknown'}`);
       }
     }
 
@@ -210,6 +241,7 @@ export class LiveSessionsService {
       totalStudents: students.length,
       registrantCount,
       batches: dto.batchIds,
+      batchFailures: batchFailures.length > 0 ? batchFailures : undefined,
     };
   }
 
@@ -347,6 +379,35 @@ export class LiveSessionsService {
    *   7. Log join_attempt (granted)
    *   8. Return the Zoom join URL
    */
+  private async redisGet(key: string): Promise<string | null> {
+    if (!this.redis) return null;
+    try { return await this.redis.get(key); } catch { this.logger.warn(`Redis GET failed: ${key}`); return null; }
+  }
+
+  private async redisSetex(key: string, ttl: number, value: string): Promise<void> {
+    if (!this.redis) return;
+    try { await this.redis.setex(key, ttl, value); } catch { this.logger.warn(`Redis SETEX failed: ${key}`); }
+  }
+
+  private async redisDel(key: string): Promise<void> {
+    if (!this.redis) return;
+    try { await this.redis.del(key); } catch { this.logger.warn(`Redis DEL failed: ${key}`); }
+  }
+
+  private async redisScan(pattern: string): Promise<string[]> {
+    if (!this.redis) return [];
+    try {
+      const keys: string[] = [];
+      let cursor = '0';
+      do {
+        const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
+        cursor = result[0];
+        keys.push(...result[1]);
+      } while (cursor !== '0');
+      return keys;
+    } catch { this.logger.warn(`Redis SCAN failed: ${pattern}`); return []; }
+  }
+
   async getStudentJoinUrl(
     sessionId: string,
     userId: string,
@@ -355,7 +416,7 @@ export class LiveSessionsService {
     userAgent?: string,
   ): Promise<{ joinUrl: string; sessionId: string }> {
     // Step 1: Validate the token in Redis
-    const tokenDataRaw = await this.redis.get(REDIS_KEYS.joinToken(token));
+    const tokenDataRaw = await this.redisGet(REDIS_KEYS.joinToken(token));
     if (!tokenDataRaw) {
       // Check if token was already used (DB lookup for audit)
       const { data: existingToken } = await this.supabaseService.client
@@ -391,13 +452,13 @@ export class LiveSessionsService {
     }
 
     // Step 3: Consume the token (delete from Redis — single use)
-    await this.redis.del(REDIS_KEYS.joinToken(token));
+    await this.redisDel(REDIS_KEYS.joinToken(token));
 
     // Step 4: Revoke any previous active join for this user + session
-    await this.redis.del(REDIS_KEYS.activeJoin(sessionId, userId));
+    await this.redisDel(REDIS_KEYS.activeJoin(sessionId, userId));
 
     // Step 5: Set new active join marker
-    await this.redis.setex(
+    await this.redisSetex(
       REDIS_KEYS.activeJoin(sessionId, userId),
       REDIS_TTL.ACTIVE_JOIN,
       JSON.stringify({ joinedAt: new Date().toISOString(), ip }),
@@ -485,25 +546,18 @@ export class LiveSessionsService {
     }
 
     // Step 3: Revoke any previous tokens for this user+session
-    const existingTokensRaw = await this.redis.get(REDIS_KEYS.joinToken(`*:${sessionId}:${userId}`));
-    // We can't pattern-match on exact keys with GET, so use SCAN
-    let cursor = '0';
-    const pattern = `join_token:*`;
-    do {
-      const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
-      cursor = result[0];
-      for (const key of result[1]) {
-        const raw = await this.redis.get(key);
-        if (raw) {
-          try {
-            const data = JSON.parse(raw);
-            if (data.userId === userId && data.sessionId === sessionId) {
-              await this.redis.del(key);
-            }
-          } catch { /* skip malformed */ }
-        }
+    const existingKeys = await this.redisScan('join_token:*');
+    for (const key of existingKeys) {
+      const raw = await this.redisGet(key);
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          if (data.userId === userId && data.sessionId === sessionId) {
+            await this.redisDel(key);
+          }
+        } catch { /* skip malformed */ }
       }
-    } while (cursor !== '0');
+    }
 
     // Also mark existing DB tokens as used (force-expire)
     await this.supabaseService.client
@@ -519,7 +573,7 @@ export class LiveSessionsService {
     const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
 
     // Step 5: Store in Redis
-    await this.redis.setex(
+    await this.redisSetex(
       REDIS_KEYS.joinToken(token),
       expiresInSeconds,
       JSON.stringify({ userId, sessionId, expiresAt }),
@@ -547,7 +601,7 @@ export class LiveSessionsService {
     * Clears the active join marker in Redis.
     */
   async leaveSession(sessionId: string, userId: string): Promise<void> {
-    await this.redis.del(REDIS_KEYS.activeJoin(sessionId, userId));
+    await this.redisDel(REDIS_KEYS.activeJoin(sessionId, userId));
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -582,22 +636,19 @@ export class LiveSessionsService {
     */
   async getActiveJoins(sessionId: string): Promise<{ userId: string; ip: string; joinedAt: string }[]> {
     const active: { userId: string; ip: string; joinedAt: string }[] = [];
-    let cursor = '0';
-    const pattern = `active_join:${sessionId}:*`;
-    do {
-      const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
-      cursor = result[0];
-      for (const key of result[1]) {
-        const raw = await this.redis.get(key);
-        if (raw) {
-          try {
-            const data = JSON.parse(raw);
-            const userId = key.split(':').pop() || '';
-            active.push({ userId, ip: data.ip || 'unknown', joinedAt: data.joinedAt || '' });
-          } catch { /* skip */ }
-        }
+    if (!this.redis) return active;
+
+    const keys = await this.redisScan(`active_join:${sessionId}:*`);
+    for (const key of keys) {
+      const raw = await this.redisGet(key);
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          const userId = key.split(':').pop() || '';
+          active.push({ userId, ip: data.ip || 'unknown', joinedAt: data.joinedAt || '' });
+        } catch { /* skip */ }
       }
-    } while (cursor !== '0');
+    }
 
     return active;
   }
@@ -628,9 +679,9 @@ export class LiveSessionsService {
 
     // Clear all active joins for this session from Redis
     const active = await this.getActiveJoins(sessionId);
-    await Promise.all(
-      active.map((a) => this.redis.del(REDIS_KEYS.activeJoin(sessionId, a.userId))),
-    );
+    for (const a of active) {
+      await this.redisDel(REDIS_KEYS.activeJoin(sessionId, a.userId));
+    }
   }
 
   // ──────────────────────────────────────────────────────────────

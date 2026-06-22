@@ -83,15 +83,15 @@ export class LiveSessionsController {
   }
 
   /**
-   * GET /live-sessions/:id/join?token=xxx
+   * POST /live-sessions/:id/join
    *
    * Consume a single-use join token and return the Zoom join URL.
-   * Token is validated, consumed (single-use), and the attempt is logged.
+   * Token is sent in the request body, never in the URL.
    */
-  @Get(':id/join')
+  @Post(':id/join')
   async getJoinUrl(
     @Param('id') id: string,
-    @Query('token') token: string,
+    @Body('token') token: string,
     @CurrentUser() user: { id: string },
     @Req() req: Request,
   ) {

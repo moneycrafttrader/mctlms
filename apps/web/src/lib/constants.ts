@@ -60,6 +60,7 @@ export const API_ROUTES = {
   INVOICES: '/invoices',
   ADMIN_SESSIONS: '/admin/sessions',
   ADMIN_RECORDINGS: '/admin/recordings',
+  ADMIN_BATCH_CURRICULUM: '/admin/batch-curriculum',
   ADMIN_TOPICS: '/admin/topics',
   ADMIN_UPLOAD_URL: '/admin/upload-url',
   ADMIN_TESTS: '/admin/tests',

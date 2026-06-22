@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Plus, BookOpen, Pencil, Trash2 } from 'lucide-react';
+import { Plus, BookOpen, Pencil, Trash2, Copy, Eye } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CourseForm } from './course-form';
@@ -12,6 +12,9 @@ import {
   getCourses,
   deleteBatch,
   deleteCourse,
+  duplicateCourse,
+  activateCourse,
+  updateCourse,
 } from '@/lib/api/courses';
 
 interface CourseListProps {
@@ -27,6 +30,8 @@ export function CourseList({ initialCourses }: CourseListProps) {
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [deletingBatch, setDeletingBatch] = useState<Batch | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [activatingCourse, setActivatingCourse] = useState<Course | null>(null);
 
   const revalidateServerCache = useCallback(async () => {
     try {
@@ -81,6 +86,26 @@ export function CourseList({ initialCourses }: CourseListProps) {
     }
   };
 
+  const confirmDuplicateCourse = async (course: Course) => {
+    try {
+      await duplicateCourse(course.id);
+      refreshCourses();
+    } catch {
+      // silently fail
+    }
+  };
+
+  const confirmActivateCourse = async () => {
+    if (!activatingCourse) return;
+    try {
+      await activateCourse(activatingCourse.id);
+      setActivatingCourse(null);
+      refreshCourses();
+    } catch {
+      // silently fail
+    }
+  };
+
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
@@ -111,12 +136,36 @@ export function CourseList({ initialCourses }: CourseListProps) {
                 <h3 className="text-lg font-semibold text-gray-900">{course.name}</h3>
                 <span className="flex items-center gap-1">
                   <button
-                    onClick={() => setDeletingCourse(course)}
-                    className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600"
-                    title="Delete course"
+                    onClick={() => setEditingCourse(course)}
+                    className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                    title="Edit course"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Pencil className="h-3.5 w-3.5" />
                   </button>
+                  <button
+                    onClick={() => confirmDuplicateCourse(course)}
+                    className="rounded p-1 text-gray-400 hover:bg-blue-100 hover:text-blue-600"
+                    title="Duplicate course"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  {course.is_active ? (
+                    <button
+                      onClick={() => setDeletingCourse(course)}
+                      className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600"
+                      title="Archive course"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setActivatingCourse(course)}
+                      className="rounded p-1 text-gray-400 hover:bg-green-100 hover:text-green-600"
+                      title="Activate course"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                       course.is_active
@@ -193,6 +242,23 @@ export function CourseList({ initialCourses }: CourseListProps) {
         />
       </Modal>
 
+      {/* Edit Course Modal */}
+      <Modal
+        isOpen={!!editingCourse}
+        onClose={() => setEditingCourse(null)}
+        title="Edit Course"
+      >
+        {editingCourse && (
+          <CourseForm
+            initialData={editingCourse}
+            onSuccess={() => {
+              setEditingCourse(null);
+              refreshCourses();
+            }}
+          />
+        )}
+      </Modal>
+
       {/* Create Batch Modal */}
       <Modal
         isOpen={showBatchModal}
@@ -250,6 +316,16 @@ export function CourseList({ initialCourses }: CourseListProps) {
         confirmLabel="Archive"
         onConfirm={confirmDeleteCourse}
         onCancel={() => setDeletingCourse(null)}
+      />
+
+      {/* Activate Course Confirmation */}
+      <ConfirmDialog
+        isOpen={!!activatingCourse}
+        title="Activate Course"
+        message={`Are you sure you want to reactivate "${activatingCourse?.name}"? It will be visible on the dashboard again.`}
+        confirmLabel="Activate"
+        onConfirm={confirmActivateCourse}
+        onCancel={() => setActivatingCourse(null)}
       />
     </>
   );

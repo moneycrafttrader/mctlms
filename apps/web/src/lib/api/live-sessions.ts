@@ -60,7 +60,8 @@ export async function requestJoinToken(sessionId: string) {
  */
 export async function getSessionJoinUrl(sessionId: string, token: string) {
   return fetchApi<JoinUrlResponse>(
-    `${API_ROUTES.LIVE_SESSIONS}/${sessionId}/join?token=${encodeURIComponent(token)}`,
+    `${API_ROUTES.LIVE_SESSIONS}/${sessionId}/join`,
+    { method: 'POST', body: JSON.stringify({ token }) },
   );
 }
 

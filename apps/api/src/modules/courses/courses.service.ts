@@ -138,6 +138,47 @@ export class CoursesService {
     return data;
   }
 
+  async duplicate(id: string) {
+    const course = await this.findById(id);
+    const newName = `${course.name} (Copy)`;
+
+    const { data: newCourse, error: insertErr } = await this.supabaseService.client
+      .from(TABLES.COURSES)
+      .insert({
+        name: newName,
+        description: course.description,
+        start_date: course.start_date,
+        end_date: course.end_date,
+      })
+      .select('*')
+      .single();
+
+    if (insertErr) {
+      this.logger.error(`Failed to duplicate course ${id}: ${insertErr.message}`);
+      throw new InternalServerErrorException(`Could not duplicate course: ${insertErr.message}`);
+    }
+
+    const batches = (course as any).batches ?? [];
+    if (batches.length > 0) {
+      const batchInserts = batches.map((b: any) => ({
+        course_id: newCourse.id,
+        name: b.name,
+        schedule_type: b.schedule_type,
+        is_active: false,
+      }));
+
+      const { error: batchErr } = await this.supabaseService.client
+        .from(TABLES.BATCHES)
+        .insert(batchInserts);
+
+      if (batchErr) {
+        this.logger.error(`Failed to copy batches for duplicated course: ${batchErr.message}`);
+      }
+    }
+
+    return newCourse;
+  }
+
   async deactivate(id: string) {
     await this.findById(id);
     return this.update(id, { isActive: false });

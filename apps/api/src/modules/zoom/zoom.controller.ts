@@ -50,11 +50,11 @@ export class ZoomController {
       throw new UnauthorizedException('Authentication required');
     }
 
-    // Look up session by Zoom meeting number
+    // Look up session by Zoom webinar ID
     const { data: sessions, error: sessionError } = await this.supabaseService.client
-      .from(TABLES.SESSIONS)
-      .select('id, is_live, start_time')
-      .eq('zoom_meeting_id', dto.meetingNumber)
+      .from(TABLES.LIVE_SESSIONS)
+      .select('id, status, start_time')
+      .eq('zoom_webinar_id', dto.meetingNumber)
       .limit(1);
 
     if (sessionError || !sessions || sessions.length === 0) {
@@ -63,7 +63,7 @@ export class ZoomController {
 
     const session = sessions[0];
 
-    if (!session.is_live) {
+    if (session.status !== 'live') {
       throw new ForbiddenException('Session is not live');
     }
 
@@ -75,16 +75,18 @@ export class ZoomController {
 
     const userBatchIds = (userBatches ?? []).map((b: any) => b.batch_id);
 
-    if (userBatchIds.length > 0) {
-      const { data: accessRecords } = await this.supabaseService.client
-        .from(TABLES.SESSION_BATCH_MAPPINGS)
-        .select('batch_id')
-        .eq('session_id', session.id)
-        .in('batch_id', userBatchIds);
+    if (userBatchIds.length === 0) {
+      throw new ForbiddenException('You do not have access to this session');
+    }
 
-      if (!accessRecords || accessRecords.length === 0) {
-        throw new ForbiddenException('You do not have access to this session');
-      }
+    const { data: accessRecords } = await this.supabaseService.client
+      .from(TABLES.SESSION_BATCHES)
+      .select('batch_id')
+      .eq('session_id', session.id)
+      .in('batch_id', userBatchIds);
+
+    if (!accessRecords || accessRecords.length === 0) {
+      throw new ForbiddenException('You do not have access to this session');
     }
 
     // Generate SDK signature

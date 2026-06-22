@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Video, Calendar, Clock, ExternalLink, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Video, Calendar, Clock, ExternalLink, Loader2, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { type LiveSession, getSessionJoinUrl, requestJoinToken } from '@/lib/api/live-sessions';
 import { SessionStatusBadge } from '@/components/shared/SessionStatusBadge';
 
 interface Props {
   upcoming: LiveSession[];
   past: (LiveSession & { attendanceStatus?: string })[];
+  error?: boolean;
 }
 
 function formatTime(iso: string) {
@@ -123,7 +124,7 @@ function SessionCard({
   );
 }
 
-export function LiveSessionsList({ upcoming, past }: Props) {
+export function LiveSessionsList({ upcoming, past, error }: Props) {
   const todayStr = new Date().toDateString();
   const todaySessions = upcoming.filter(
     (s) => new Date(s.start_time).toDateString() === todayStr,
@@ -131,6 +132,20 @@ export function LiveSessionsList({ upcoming, past }: Props) {
   const laterSessions = upcoming.filter(
     (s) => new Date(s.start_time).toDateString() !== todayStr,
   );
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-center">
+        <AlertTriangle className="h-10 w-10 text-status-live" />
+        <p className="text-sm font-medium text-text-primary">
+          Failed to load sessions
+        </p>
+        <p className="text-xs text-text-secondary">
+          Something went wrong. Please try again later.
+        </p>
+      </div>
+    );
+  }
 
   if (upcoming.length === 0 && past.length === 0) {
     return (

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import {
@@ -11,7 +12,8 @@ import {
 } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
-import { InvoicesService } from '../invoices/invoices.service';
+import { OutboxService } from '../outbox/outbox.service';
+import { Transaction } from '../../common/utils/transaction.util';
 import { CreatePaymentPlanDto } from './dto/create-payment-plan.dto';
 import { MarkInstallmentPaidDto } from './dto/mark-installment-paid.dto';
 
@@ -21,7 +23,7 @@ export class PaymentsService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
-    private readonly invoicesService: InvoicesService,
+    private readonly outboxService: OutboxService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────
@@ -207,52 +209,81 @@ export class PaymentsService {
       ? new Date(dto.paymentDate).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0];
 
-    const { error: updateError } = await this.supabaseService.client
-      .from(TABLES.PAYMENT_INSTALLMENTS)
-      .update({
-        status: InstallmentStatus.PAID,
-        paid_at: new Date().toISOString(),
-      })
-      .eq('id', installmentId);
+    const oldStatus = inst.status;
+    const oldPaidAt = inst.paid_at;
 
-    if (updateError) {
-      this.logger.error(`Failed to mark installment as paid: ${updateError.message}`);
-      throw new BadRequestException('Failed to mark installment as paid');
-    }
+    // 3. Transaction: update installment → create payment → link back
+    const tx = new Transaction();
+    let payment: any = null;
 
-    // 3. Create payment record
-    const { data: payment, error: payError } = await this.supabaseService.client
-      .from(TABLES.PAYMENTS)
-      .insert({
-        student_id: plan.student_id,
-        course_id: plan.course_id,
-        payment_plan_id: plan.id,
-        installment_id: installmentId,
-        amount: inst.amount,
-        payment_method: dto.paymentMethod,
-        transaction_id: dto.transactionId ?? null,
-        paid_on: paidOn,
-        is_full_payment: false,
-        recorded_by: adminId,
-      })
-      .select()
-      .single();
-
-    if (payError) {
-      this.logger.error(`Failed to create payment record: ${payError.message}`);
-      // Rollback installment status
-      await this.supabaseService.client
-        .from(TABLES.PAYMENT_INSTALLMENTS)
-        .update({ status: InstallmentStatus.PENDING, paid_at: null })
-        .eq('id', installmentId);
-      throw new BadRequestException('Failed to create payment record');
-    }
-
-    // Link payment back to installment
-    await this.supabaseService.client
-      .from(TABLES.PAYMENT_INSTALLMENTS)
-      .update({ payment_id: (payment as any).id })
-      .eq('id', installmentId);
+    await tx.run([
+      {
+        name: 'update installment to PAID',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.PAYMENT_INSTALLMENTS)
+            .update({
+              status: InstallmentStatus.PAID,
+              paid_at: new Date().toISOString(),
+            })
+            .eq('id', installmentId);
+          if (error) throw error;
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.PAYMENT_INSTALLMENTS)
+            .update({ status: oldStatus, paid_at: oldPaidAt })
+            .eq('id', installmentId);
+        },
+      },
+      {
+        name: 'create payment record',
+        execute: async () => {
+          const { data, error } = await this.supabaseService.client
+            .from(TABLES.PAYMENTS)
+            .insert({
+              student_id: plan.student_id,
+              course_id: plan.course_id,
+              payment_plan_id: plan.id,
+              installment_id: installmentId,
+              amount: inst.amount,
+              payment_method: dto.paymentMethod,
+              transaction_id: dto.transactionId ?? null,
+              paid_on: paidOn,
+              is_full_payment: false,
+              recorded_by: adminId,
+            })
+            .select()
+            .single();
+          if (error) throw error;
+          payment = data;
+        },
+        rollback: async () => {
+          if (payment) {
+            await this.supabaseService.client
+              .from(TABLES.PAYMENTS)
+              .delete()
+              .eq('id', payment.id);
+          }
+        },
+      },
+      {
+        name: 'link payment_id to installment',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.PAYMENT_INSTALLMENTS)
+            .update({ payment_id: payment.id })
+            .eq('id', installmentId);
+          if (error) throw error;
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.PAYMENT_INSTALLMENTS)
+            .update({ payment_id: null })
+            .eq('id', installmentId);
+        },
+      },
+    ]);
 
     // 4. Check if all installments are paid → mark plan completed
     const { data: allInsts } = await this.supabaseService.client
@@ -271,8 +302,10 @@ export class PaymentsService {
         .eq('id', plan.id);
     }
 
-    // Trigger receipt generation (PDF + email)
-    await this.invoicesService.createAndSendReceipt((payment as any).id);
+    // Enqueue receipt generation (outbox pattern) — never blocks payment commit
+    await this.outboxService.enqueue('receipt', { paymentId: payment.id }).catch((err) =>
+      this.logger.error(`Failed to enqueue receipt for payment ${payment.id}: ${err.message}`),
+    );
 
     return payment as any;
   }
@@ -297,21 +330,30 @@ export class PaymentsService {
       throw new BadRequestException('Failed to fetch payment plans');
     }
 
-    const result = [];
+    if (!(plans ?? []).length) return [];
 
-    for (const plan of (plans ?? []) as any[]) {
-      const { data: installments } = await this.supabaseService.client
-        .from(TABLES.PAYMENT_INSTALLMENTS)
-        .select('*')
-        .eq('payment_plan_id', plan.id)
-        .order('installment_number', { ascending: true });
+    const planIds = (plans as any[]).map((p) => p.id);
 
-      result.push({
-        ...plan,
-        installments: installments ?? [],
-      });
+    // Single query for all installments — avoids N+1
+    const { data: allInstallments } = await this.supabaseService.client
+      .from(TABLES.PAYMENT_INSTALLMENTS)
+      .select('*')
+      .in('payment_plan_id', planIds)
+      .order('installment_number', { ascending: true });
+
+    // Group in memory by payment_plan_id
+    const installmentMap = new Map<string, any[]>();
+    for (const inst of allInstallments ?? []) {
+      const planId = (inst as any).payment_plan_id;
+      if (!installmentMap.has(planId)) {
+        installmentMap.set(planId, []);
+      }
+      installmentMap.get(planId)!.push(inst);
     }
 
-    return result;
+    return (plans as any[]).map((plan) => ({
+      ...plan,
+      installments: installmentMap.get(plan.id) ?? [],
+    }));
   }
 }
