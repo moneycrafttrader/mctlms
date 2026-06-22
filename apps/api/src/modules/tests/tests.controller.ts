@@ -40,6 +40,19 @@ export class TestsController {
     });
   }
 
+  @Roles(UserRole.STUDENT)
+  @Get('my')
+  getMyTests(
+    @CurrentUser() user: { id: string },
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.testsService.getMyTests(user.id, {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id')
   findOne(@Param('id') id: string) {

@@ -261,4 +261,50 @@ export class TestsService {
     if (error) throw error;
     return { deleted: true };
   }
+
+  async getMyTests(userId: string, options?: { page?: number; limit?: number }) {
+    const { data: enrolments } = await this.supabaseService.client
+      .from(TABLES.BATCH_STUDENTS)
+      .select('batch_id')
+      .eq('user_id', userId);
+
+    const batchIds = (enrolments ?? []).map((e: any) => e.batch_id);
+
+    if (batchIds.length === 0) {
+      return { items: [], total: 0, page: options?.page ?? 1, limit: options?.limit ?? 20 };
+    }
+
+    const { data: testBatches } = await this.supabaseService.client
+      .from(TABLES.TEST_BATCHES)
+      .select('test_id')
+      .in('batch_id', batchIds);
+
+    const testIds = [...new Set((testBatches ?? []).map((tb: any) => tb.test_id))];
+
+    if (testIds.length === 0) {
+      return { items: [], total: 0, page: options?.page ?? 1, limit: options?.limit ?? 20 };
+    }
+
+    let query = this.supabaseService.client
+      .from(TABLES.TESTS)
+      .select(`*, test_batches(batch_id, batches(name))`, { count: 'exact' })
+      .in('id', testIds)
+      .in('status', ['published', 'scheduled', 'active'])
+      .order('created_at', { ascending: false });
+
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to);
+
+    const { data, count, error } = await query;
+
+    if (error) {
+      this.logger.error(`Failed to fetch student tests: ${error.message}`);
+      throw error;
+    }
+
+    return { items: data ?? [], total: count ?? 0, page, limit };
+  }
 }

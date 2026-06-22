@@ -67,6 +67,16 @@ export async function getTests(params?: { status?: string; batchId?: string; sea
   );
 }
 
+export async function getMyTests(params?: { page?: number; limit?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.page) searchParams.set('page', String(params.page));
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const query = searchParams.toString();
+  return fetchApi<{ items: TestResponse[]; total: number; page: number; limit: number }>(
+    `/tests/my${query ? `?${query}` : ''}`,
+  );
+}
+
 export async function getTest(id: string) {
   return fetchApi<TestResponse>(`/tests/${id}`);
 }
@@ -202,7 +212,9 @@ export async function getMyAttempts(page?: number, limit?: number) {
   if (page) params.set('page', String(page));
   if (limit) params.set('limit', String(limit));
   const query = params.toString();
-  return fetchApi<any[]>(`/attempts/my${query ? `?${query}` : ''}`);
+  return fetchApi<{ items: Array<{ id: string; testId: string; status: string }>; total: number; page: number; limit: number }>(
+    `/attempts/my${query ? `?${query}` : ''}`,
+  );
 }
 
 export async function getAttemptTimer(attemptId: string) {

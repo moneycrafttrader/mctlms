@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Play, Eye } from 'lucide-react';
-import { getTests, getMyAttempts } from '@/lib/api/assessments';
+import { getMyTests, getMyAttempts } from '@/lib/api/assessments';
 import type { TestResponse } from '@/lib/api/assessments';
 import { ROUTES } from '@/lib/constants';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -145,11 +145,11 @@ export default function TestsPage() {
     async function fetchData() {
       try {
         const [testsRes, attemptsRes] = await Promise.all([
-          getTests(),
+          getMyTests(),
           getMyAttempts(),
         ]);
         setTests(testsRes.items ?? []);
-        setAttempts(Array.isArray(attemptsRes) ? attemptsRes.map((a: any) => ({ testId: a.testId ?? a.test_id, id: a.id, status: a.status })) : []);
+        setAttempts((attemptsRes.items ?? []).map((a: any) => ({ testId: a.test_id ?? a.testId, id: a.id, status: a.status })));
       } catch {
         // silent
       } finally {

@@ -19,6 +19,19 @@ export class AttemptsController {
     return this.attemptsService.startAttempt(testId, user.id, dto);
   }
 
+  @Roles(UserRole.STUDENT)
+  @Get('my')
+  getMyAttempts(
+    @CurrentUser() user: { id: string },
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.attemptsService.getAttemptsByUser(user.id, {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
   @Get(':id')
   getAttempt(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.attemptsService.getAttempt(id, user.id);
@@ -52,19 +65,6 @@ export class AttemptsController {
     @Body() dto: SubmitAttemptDto,
   ) {
     return this.attemptsService.submitAttempt(id, user.id, dto);
-  }
-
-  @Roles(UserRole.STUDENT)
-  @Get('my')
-  getMyAttempts(
-    @CurrentUser() user: { id: string },
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.attemptsService.getAttemptsByUser(user.id, {
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
   }
 
   @Get(':id/timer')
