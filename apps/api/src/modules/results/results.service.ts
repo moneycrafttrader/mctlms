@@ -84,7 +84,6 @@ export class ResultsService {
         test:${TABLES.TESTS}(id, title, total_marks, passing_marks)
       `, { count: 'exact' })
       .eq('user_id', userId)
-      .eq('status', 'published')
       .order('published_at', { ascending: false })
       .range(from, to);
 

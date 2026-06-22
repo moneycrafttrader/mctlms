@@ -133,7 +133,7 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
   const isLive = nextClass?.status === 'live';
   const lastResult = results.length > 0 ? (results[0] as Record<string, unknown>) : null;
   const totalWatchedSeconds = recordings.reduce((acc, r) => acc + (r.progress.watched_seconds || 0), 0);
-  const completedTests = results.filter((r) => (r as Record<string, unknown>).status === 'published').length;
+  const completedTests = results.length;
 
   return (
     <>
@@ -329,9 +329,9 @@ export function DashboardClient({ name, nextClass, upcoming, continueContent, co
                       <Trophy className="h-6 w-6 text-brand-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-text-primary">{String(lastResult.testTitle || lastResult.title || 'Recent Test')}</p>
+                      <p className="font-semibold text-text-primary">{String(lastResult.test_title || lastResult.title || 'Recent Test')}</p>
                       <div className="mt-0.5 flex items-center gap-2 text-xs text-text-muted">
-                        <span>{String(lastResult.score || 0)}/{String(lastResult.totalMarks || lastResult.total_marks || 100)}</span>
+                        <span>{String(lastResult.obtained_marks || 0)}/{String(lastResult.total_marks || 100)}</span>
                         <Badge variant={Number(lastResult.percentage || 0) >= 40 ? 'success' : 'error'} size="sm">
                           {Number(lastResult.percentage || 0)}%
                         </Badge>

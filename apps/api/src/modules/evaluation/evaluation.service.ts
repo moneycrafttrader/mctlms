@@ -27,6 +27,40 @@ export class EvaluationService {
 
   constructor(private readonly supabaseService: SupabaseService) {}
 
+  /**
+   * Fetch test_answers enriched with question_bank + test_question_bank data.
+   * Uses FK from test_answers.question_id -> question_bank.id (added in migration 014).
+   * Fetches test_question_bank separately and merges in-memory.
+   */
+  private async fetchAnswersWithQuestions(
+    attemptIds: string | string[],
+    testId: string,
+  ): Promise<any[]> {
+    const ids = Array.isArray(attemptIds) ? attemptIds : [attemptIds];
+
+    const { data: answers, error } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .select(`*, question_bank!inner(*)`)
+      .in('attempt_id', ids);
+
+    if (error) throw error;
+    if (!answers?.length) return [];
+
+    const { data: tqbRecords } = await this.supabaseService.client
+      .from(TABLES.TEST_QUESTION_BANK)
+      .select('*')
+      .eq('test_id', testId);
+
+    const tqbByQuestionBankId = new Map(
+      (tqbRecords ?? []).map((t) => [t.question_bank_id, t]),
+    );
+
+    return (answers ?? []).map((a) => ({
+      ...a,
+      tqb: tqbByQuestionBankId.get(a.question_id) ?? {},
+    }));
+  }
+
   async autoGradeAttempt(attemptId: string): Promise<{ summary: AutoGradeSummary; attempt: any }> {
     const { data: attempt, error: attemptError } = await this.supabaseService.client
       .from(TABLES.TEST_ATTEMPTS)
@@ -44,19 +78,8 @@ export class EvaluationService {
 
     if (testError || !test) throw new NotFoundException('Test not found');
 
-    const { data: answers, error: answersError } = await this.supabaseService.client
-      .from(TABLES.TEST_ANSWERS)
-      .select(`
-        *,
-        test_question_bank!inner(
-          *,
-          question_bank!inner(*)
-        )
-      `)
-      .eq('attempt_id', attemptId);
-
-    if (answersError) throw answersError;
-    if (!answers?.length) throw new NotFoundException('No answers found for this attempt');
+    const answers = await this.fetchAnswersWithQuestions(attemptId, test.id);
+    if (!answers.length) throw new NotFoundException('No answers found for this attempt');
 
     const autoGradableTypes = new Set([
       QuestionType.SINGLE_CHOICE,
@@ -78,9 +101,9 @@ export class EvaluationService {
     const reviewQueueEntries: { attempt_id: string; test_answer_id: string }[] = [];
 
     for (const answer of answers) {
-      const questionBank = answer.test_question_bank.question_bank;
-      const tqb = answer.test_question_bank;
-      const marksPossible = tqb.marks ?? 1;
+      const questionBank = answer.question_bank;
+      const tqb = answer.tqb;
+      const marksPossible = tqb.marks ?? answer.marks_possible ?? 1;
       const negativeMark = tqb.negative_mark ?? 0;
       summary.marksPossible += marksPossible;
 
@@ -224,15 +247,15 @@ export class EvaluationService {
           id,
           status,
           submitted_at,
+          user_id,
           profiles!inner(id, full_name, email)
         ),
         test_answers!inner(
           id,
           answer,
           marks_possible,
-          test_question_bank!inner(
-            question_bank!inner(id, question_text, question_type)
-          )
+          question_id,
+          question_bank!inner(id, question_text, question_type)
         )
       `)
       .order('created_at', { ascending: false });
@@ -349,19 +372,8 @@ export class EvaluationService {
 
     if (attemptError || !attempt) throw new NotFoundException('Attempt not found');
 
-    const { data: answers, error: answersError } = await this.supabaseService.client
-      .from(TABLES.TEST_ANSWERS)
-      .select(`
-        *,
-        test_question_bank!inner(
-          *,
-          question_bank!inner(id, topic_id, question_type, difficulty, question_text)
-        )
-      `)
-      .eq('attempt_id', attemptId);
-
-    if (answersError) throw answersError;
-    if (!answers?.length) throw new NotFoundException('No answers found for this attempt');
+    const answers = await this.fetchAnswersWithQuestions(attemptId, attempt.test_id);
+    if (!answers.length) throw new NotFoundException('No answers found for this attempt');
 
     const totalMarks = attempt.tests.total_marks;
     const obtainedMarks = answers.reduce((sum, a) => sum + (a.marks_awarded ?? 0), 0);
@@ -466,7 +478,7 @@ export class EvaluationService {
     const topicMap = new Map<string, { correct: number; total: number; marks: number }>();
 
     for (const answer of answers) {
-      const topicId = answer.test_question_bank?.question_bank?.topic_id ?? 'unknown';
+      const topicId = answer.question_bank?.topic_id ?? answer.tqb?.question_bank?.topic_id ?? 'unknown';
       const marks = answer.marks_awarded ?? 0;
       const isCorrect = answer.is_correct === true;
 
@@ -491,13 +503,13 @@ export class EvaluationService {
 
   private buildQuestionAnalysis(answers: any[]) {
     return answers.map((answer) => ({
-      questionId: answer.test_question_bank?.question_bank?.id,
-      questionText: answer.test_question_bank?.question_bank?.question_text,
-      questionType: answer.test_question_bank?.question_bank?.question_type,
+      questionId: answer.question_bank?.id,
+      questionText: answer.question_bank?.question_text,
+      questionType: answer.question_bank?.question_type,
       userAnswer: answer.answer,
-      correctAnswer: answer.test_question_bank?.question_bank?.correct_answer,
+      correctAnswer: answer.question_bank?.correct_answer,
       isCorrect: answer.is_correct,
-      marksPossible: answer.marks_possible ?? answer.test_question_bank?.marks ?? 1,
+      marksPossible: answer.marks_possible ?? answer.tqb?.marks ?? 1,
       marksAwarded: answer.marks_awarded ?? 0,
       feedback: answer.feedback,
     }));
@@ -509,7 +521,7 @@ export class EvaluationService {
       .select(`
         *,
         test_attempts!inner(
-          student_id,
+          user_id,
           started_at,
           submitted_at,
           profiles!inner(batch_id),
@@ -551,21 +563,8 @@ export class EvaluationService {
       ? durations.reduce((a, b) => a + b, 0) / durations.length
       : 0;
 
-    const { data: allAnswers, error: allAnswersError } = await this.supabaseService.client
-      .from(TABLES.TEST_ANSWERS)
-      .select(`
-        is_correct,
-        test_question_bank!inner(
-          question_bank!inner(id, question_text, topic_id, difficulty),
-          marks
-        )
-      `)
-      .in(
-        'attempt_id',
-        results.map((r) => r.attempt_id),
-      );
-
-    if (allAnswersError) throw allAnswersError;
+    const attemptIds = results.map((r) => r.attempt_id);
+    const allAnswers = await this.fetchAnswersWithQuestions(attemptIds, testId);
 
     const questionPerformance = this.buildQuestionPerformance(allAnswers ?? []);
     const topicPerformance = this.buildTopicPerformance(allAnswers ?? []);
@@ -616,7 +615,7 @@ export class EvaluationService {
     const questionMap = new Map<string, { correct: number; total: number; questionText: string }>();
 
     for (const answer of answers) {
-      const qb = answer.test_question_bank?.question_bank;
+      const qb = answer.question_bank;
       if (!qb) continue;
 
       const questionId = qb.id;
@@ -642,7 +641,7 @@ export class EvaluationService {
     const topicMap = new Map<string, { correct: number; total: number }>();
 
     for (const answer of answers) {
-      const qb = answer.test_question_bank?.question_bank;
+      const qb = answer.question_bank;
       if (!qb) continue;
 
       const topicId = qb.topic_id ?? 'unknown';

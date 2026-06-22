@@ -175,8 +175,9 @@ export class AuthService {
     await this.redis.del(rateLimitKey);
 
     // ── Step 10: Device registration (fire-and-forget-ish) ────
-    // Register the device fingerprint and detect suspicious logins.
-    // Email alerts are sent fire-and-forget — never block login response.
+    // Register the device fingerprint for security audit logging.
+    // Login alert table entries are visible in Admin → Security → Device Activity.
+    // Email alerts have been removed per business decision.
     if (dto.device) {
       const { device, isNew } = await this.deviceService.registerDevice(
         userId,
@@ -199,17 +200,6 @@ export class AuthService {
             details: { browser: dto.device.browser, os: dto.device.os },
             is_suspicious: true,
           });
-
-        if (!device.is_trusted) {
-          this.emailService.sendLoginAlert(
-            profile.email,
-            profile.name,
-            dto.device.browser ?? 'Unknown browser',
-            dto.device.os ?? 'Unknown OS',
-            ip,
-            this.configService.get<string>('FRONTEND_URL', 'https://mctlms-web.vercel.app'),
-          ).catch((err) => this.logger.warn(`Login alert email failed: ${err.message}`));
-        }
       }
     }
 
