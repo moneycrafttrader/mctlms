@@ -109,11 +109,12 @@ const achievements = [
 ];
 
 let _renderOrder = 0;
-function renderTrace(section: string): void {
+function renderTrace(section: string): null {
   _renderOrder++;
   if (process.env.NODE_ENV === 'development') {
     console.log(`[Dashboard:${_renderOrder}] Rendering section: ${section}`);
   }
+  return null;
 }
 
 export function DashboardClient({ name, nextClass, upcoming, continueContent, courses, recordings, results, pastSessions }: DashboardClientProps) {
