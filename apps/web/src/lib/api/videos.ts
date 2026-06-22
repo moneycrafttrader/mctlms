@@ -132,15 +132,23 @@ export async function getBatchVideos(batchId: string) {
   return fetchApi<BatchVideo[]>(`${API_ROUTES.RECORDINGS}/batch/${batchId}`);
 }
 
-export interface StudentCurriculumItem {
-  id: string;
-  recordingId: string;
+export interface StudentCurriculumContent {
   title: string;
   description?: string;
-  durationSeconds?: number;
-  categoryName: string;
-  moduleName?: string;
-  sortOrder: number;
+  duration_seconds?: number;
+  status?: string;
+}
+
+export interface StudentCurriculumItem {
+  id: string;
+  content_id?: string;
+  content_type: string;
+  category_name: string;
+  module_name?: string;
+  sort_order: number;
+  pdf_url?: string;
+  pdf_title?: string;
+  content?: StudentCurriculumContent;
 }
 
 export interface StudentCurriculumCategory {

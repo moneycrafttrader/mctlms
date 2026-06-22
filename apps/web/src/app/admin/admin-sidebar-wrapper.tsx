@@ -20,6 +20,10 @@ import {
   BarChart3,
   LogOut,
   Trophy,
+  Activity,
+  Gauge,
+  Megaphone,
+  ScrollText,
 } from 'lucide-react';
 
 const navItems = [
@@ -35,6 +39,10 @@ const navItems = [
   { label: 'Questions', href: ROUTES.ADMIN.QUESTIONS, icon: HelpCircle },
   { label: 'Review Queue', href: ROUTES.ADMIN.REVIEW_QUEUE, icon: ClipboardCheck },
   { label: 'Analytics', href: ROUTES.ADMIN.ANALYTICS, icon: BarChart3 },
+  { label: 'Monitoring', href: ROUTES.ADMIN.MONITORING, icon: Activity },
+  { label: 'Performance', href: ROUTES.ADMIN.PERFORMANCE, icon: Gauge },
+  { label: 'Announcements', href: ROUTES.ADMIN.ANNOUNCEMENTS, icon: Megaphone },
+  { label: 'Audit Logs', href: ROUTES.ADMIN.AUDIT_LOGS, icon: ScrollText },
 ];
 
 export function AdminSidebarWrapper() {

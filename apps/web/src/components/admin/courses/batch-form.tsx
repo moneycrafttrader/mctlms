@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createBatch, updateBatch, type Batch } from '@/lib/api/courses';
+import { createBatch, updateBatch, type Batch, type Course } from '@/lib/api/courses';
 
 const SCHEDULE_TYPES = [
   { value: 'weekday', label: 'Weekday' },
@@ -13,15 +13,18 @@ interface BatchFormProps {
   courseId: string;
   onSuccess: () => void;
   batch?: Batch;
+  courses?: Course[];
 }
 
-export function BatchForm({ courseId, onSuccess, batch }: BatchFormProps) {
+export function BatchForm({ courseId, onSuccess, batch, courses }: BatchFormProps) {
+  const [selectedCourseId, setSelectedCourseId] = useState(courseId);
   const [name, setName] = useState(batch?.name ?? '');
   const [scheduleType, setScheduleType] = useState(batch?.schedule_type ?? 'weekday');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const isEditing = !!batch;
+  const needsCourseSelection = !selectedCourseId && !isEditing;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +35,12 @@ export function BatchForm({ courseId, onSuccess, batch }: BatchFormProps) {
       if (isEditing) {
         await updateBatch(batch.id, { name, scheduleType });
       } else {
-        await createBatch(courseId, { name, scheduleType });
+        if (!selectedCourseId) {
+          setError('Please select a course.');
+          setSubmitting(false);
+          return;
+        }
+        await createBatch(selectedCourseId, { name, scheduleType });
       }
       setName('');
       onSuccess();
@@ -45,6 +53,30 @@ export function BatchForm({ courseId, onSuccess, batch }: BatchFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {needsCourseSelection && courses && (
+        <div>
+          <label htmlFor="batch-course" className="block text-sm font-medium text-gray-700">
+            Course
+          </label>
+          <select
+            id="batch-course"
+            required
+            value={selectedCourseId}
+            onChange={(e) => setSelectedCourseId(e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          >
+            <option value="">Select a course...</option>
+            {courses
+              .filter((c) => c.is_active)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
+
       <div>
         <label htmlFor="batch-name" className="block text-sm font-medium text-gray-700">
           Batch Name

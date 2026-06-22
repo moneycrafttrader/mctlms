@@ -44,13 +44,21 @@ export async function getRecordings() {
 export interface CurriculumItem {
   id: string;
   batch_id: string;
-  recording_id: string;
+  content_id?: string;
+  content_type: string;
   category_name: string;
   module_name?: string;
   sort_order: number;
   is_published: boolean;
-  created_at: string;
-  updated_at: string;
+  pdf_url?: string;
+  pdf_title?: string;
+  title_override?: string;
+  content?: {
+    title: string;
+    description?: string;
+    duration_seconds?: number;
+    status?: string;
+  };
   recordings?: Recording;
 }
 
@@ -60,11 +68,15 @@ export interface CurriculumCategory {
 }
 
 export interface AddCurriculumItemData {
-  recordingId: string;
+  contentId?: string;
+  contentType: string;
   categoryName: string;
   moduleName?: string;
   sortOrder?: number;
   isPublished?: boolean;
+  pdfUrl?: string;
+  pdfTitle?: string;
+  titleOverride?: string;
 }
 
 export interface UpdateCurriculumItemData {
@@ -72,6 +84,9 @@ export interface UpdateCurriculumItemData {
   moduleName?: string;
   sortOrder?: number;
   isPublished?: boolean;
+  pdfUrl?: string;
+  pdfTitle?: string;
+  titleOverride?: string;
 }
 
 /**
@@ -135,4 +150,62 @@ export async function reorderCurriculum(
     `${API_ROUTES.ADMIN_BATCH_CURRICULUM}/${batchId}/reorder`,
     { method: 'PATCH', body: JSON.stringify({ items }) },
   );
+}
+
+// ── Curriculum Progress ──────────────────────────────────────
+
+export interface CategoryProgress {
+  category: string;
+  totalItems: number;
+  completedItems: number;
+  isCompleted: boolean;
+  rule: string;
+  items: { curriculumId: string; contentId?: string; contentType: string; completed: boolean }[];
+}
+
+export interface BatchProgress {
+  batchId: string;
+  categories: CategoryProgress[];
+  prerequisites: { curriculum_id: string; prerequisite_id: string }[];
+}
+
+export async function getBatchProgress(batchId: string) {
+  return fetchApi<BatchProgress>(`${API_ROUTES.BATCHES}/${batchId}/progress`);
+}
+
+export async function setCurriculumRule(
+  batchId: string,
+  categoryName: string,
+  ruleType: string,
+  threshold?: number,
+) {
+  return fetchApi('/admin/curriculum-rules', {
+    method: 'POST',
+    body: JSON.stringify({ batchId, categoryName, ruleType, threshold }),
+  });
+}
+
+export async function addPrerequisite(
+  curriculumId: string,
+  prerequisiteId: string,
+  batchId: string,
+) {
+  return fetchApi('/admin/curriculum-prerequisites', {
+    method: 'POST',
+    body: JSON.stringify({ curriculumId, prerequisiteId, batchId }),
+  });
+}
+
+export async function removePrerequisite(id: string) {
+  return fetchApi(`/admin/curriculum-prerequisites/${id}`, { method: 'DELETE' });
+}
+
+export async function markCurriculumItemProgress(
+  curriculumId: string,
+  completed: boolean,
+) {
+  return fetchApi('/curriculum-progress', {
+    method: 'POST',
+    body: JSON.stringify({ curriculumId, completed }),
+  });
 }

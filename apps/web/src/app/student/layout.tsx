@@ -3,6 +3,7 @@ import { StudentSidebar } from '@/components/layout/StudentSidebar';
 import { StudentBottomNav } from '@/components/layout/StudentBottomNav';
 import { SessionExpiredOverlay } from '@/components/shared/SessionExpiredOverlay';
 import { GuardRoute } from '@/lib/guards/client-guard';
+import { NotificationBell } from '@/components/student/NotificationBell';
 
 export default function StudentLayout({ children }: { children: ReactNode }) {
   return (
@@ -23,6 +24,7 @@ export default function StudentLayout({ children }: { children: ReactNode }) {
               <span className="text-sm font-medium text-text-secondary">Student Dashboard</span>
             </div>
             <div className="flex items-center gap-3">
+              <NotificationBell />
               <span className="text-xs text-text-muted">MCT Learn v2.0</span>
             </div>
           </header>

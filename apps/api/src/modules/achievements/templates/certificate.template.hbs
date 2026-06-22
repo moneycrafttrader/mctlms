@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Georgia', 'Times New Roman', serif; background: #faf9f6; padding: 40px; }
+    .certificate-wrapper { max-width: 800px; margin: 0 auto; background: #fff; border: 3px solid #1e3a5f; padding: 50px; position: relative; }
+    .certificate-wrapper:before { content: ''; position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; border: 1px solid #f59e0b; pointer-events: none; }
+    .header { text-align: center; border-bottom: 2px solid #1e3a5f; padding-bottom: 20px; margin-bottom: 30px; }
+    .header h1 { color: #1e3a5f; font-size: 28px; letter-spacing: 3px; text-transform: uppercase; }
+    .header .subtitle { color: #f59e0b; font-size: 14px; margin-top: 5px; }
+    .body { text-align: center; padding: 30px 0; }
+    .body .certify { font-size: 16px; color: #475569; margin-bottom: 20px; }
+    .body .student-name { font-size: 32px; font-weight: bold; color: #1e3a5f; margin: 20px 0; letter-spacing: 1px; }
+    .body .course-name { font-size: 22px; color: #f59e0b; margin: 15px 0; font-style: italic; }
+    .body .completion-text { font-size: 14px; color: #475569; margin: 20px 0; line-height: 1.6; }
+    .body .date { font-size: 14px; color: #475569; margin-top: 25px; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+    .footer .cert-number { font-size: 11px; color: #94a3b8; }
+    .footer .org { font-size: 12px; color: #1e3a5f; font-weight: bold; }
+    .seal { width: 80px; height: 80px; border: 2px solid #f59e0b; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #f59e0b; font-size: 11px; text-align: center; line-height: 1.3; text-transform: uppercase; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <div class="certificate-wrapper">
+    <div class="header">
+      <h1>Certificate of Completion</h1>
+      <div class="subtitle">Money Craft Trader — Learn</div>
+    </div>
+    <div class="body">
+      <p class="certify">This is to certify that</p>
+      <div class="student-name">{{studentName}}</div>
+      <p class="completion-text">has successfully completed the course</p>
+      <div class="course-name">{{courseName}}</div>
+      <p class="completion-text">with a certificate of completion issued on {{issueDate}}</p>
+      <div class="seal">MCT<br/>Learn</div>
+    </div>
+    <div class="footer">
+      <div>
+        <div class="org">Money Craft Trader</div>
+        <div class="cert-number">Certificate No: {{certificateNumber}}</div>
+      </div>
+      <div class="cert-number">Verify at: {{verifyUrl}}</div>
+    </div>
+  </div>
+</body>
+</html>

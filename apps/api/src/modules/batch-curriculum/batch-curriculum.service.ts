@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { AddCurriculumItemDto } from './dto/add-curriculum-item.dto';
@@ -12,9 +12,19 @@ export class BatchCurriculumService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
   async findAll(batchId: string) {
+    const raw = await this.fetchCurriculum(batchId, false);
+    return this.groupByCategory(raw);
+  }
+
+  async findPublished(batchId: string) {
+    const raw = await this.fetchCurriculum(batchId, true);
+    return this.groupByCategory(raw);
+  }
+
+  private async fetchCurriculum(batchId: string, publishedOnly: boolean) {
     const { data, error } = await this.supabaseService.client
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
-      .select('*, recordings(*)')
+      .select('*')
       .eq('batch_id', batchId)
       .order('category_name', { ascending: true })
       .order('sort_order', { ascending: true });
@@ -24,50 +34,80 @@ export class BatchCurriculumService {
       throw new InternalServerErrorException('Could not load curriculum.');
     }
 
+    const items = publishedOnly
+      ? (data ?? []).filter((i: any) => i.is_published)
+      : (data ?? []);
+
+    const enriched = await Promise.all(
+      items.map(async (item: any) => {
+        const content = await this.resolveContent(item);
+        return { ...item, content };
+      }),
+    );
+
+    return enriched;
+  }
+
+  private async resolveContent(item: any): Promise<any> {
+    const type = item.content_type ?? 'recording';
+    const id = item.content_id;
+
+    if (!id) {
+      if (type === 'pdf') {
+        return {
+          title: item.pdf_title ?? item.title_override ?? 'PDF Document',
+          description: null,
+        };
+      }
+      return { title: item.title_override ?? 'Unknown', description: null };
+    }
+
+    try {
+      if (type === 'test') {
+        const { data } = await this.supabaseService.client
+          .from(TABLES.TESTS)
+          .select('id, title, description, duration_minutes, total_marks, passing_marks')
+          .eq('id', id)
+          .single();
+        return data ?? { title: item.title_override ?? 'Unknown Test' };
+      }
+
+      if (type === 'session') {
+        const { data } = await this.supabaseService.client
+          .from(TABLES.LIVE_SESSIONS)
+          .select('id, topic as title, description, start_time, status')
+          .eq('id', id)
+          .single();
+        return data ?? { title: item.title_override ?? 'Unknown Session' };
+      }
+
+      if (type === 'pdf') {
+        return {
+          title: item.pdf_title ?? item.title_override ?? 'PDF Document',
+          description: null,
+          pdfUrl: item.pdf_url,
+        };
+      }
+
+      // Default: recording
+      const { data } = await this.supabaseService.client
+        .from(TABLES.RECORDINGS)
+        .select('id, title, description, duration_seconds, status, created_at')
+        .eq('id', id)
+        .single();
+      return data ?? { title: item.title_override ?? 'Unknown Recording' };
+    } catch {
+      return { title: item.title_override ?? `Unknown ${type}` };
+    }
+  }
+
+  private groupByCategory(items: any[]) {
     const grouped: Record<string, any[]> = {};
-    for (const item of data ?? []) {
-      const cat = (item as any).category_name ?? 'General';
+    for (const item of items) {
+      const cat = item.category_name ?? 'General';
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(item);
     }
-
-    return Object.entries(grouped).map(([category, items]) => ({
-      category,
-      items,
-    }));
-  }
-
-  async findPublished(batchId: string) {
-    const { data, error } = await this.supabaseService.client
-      .from(TABLES.BATCH_RECORDING_CURRICULUM)
-      .select('*, recordings!inner(id, title, description, duration_seconds, status, created_at)')
-      .eq('batch_id', batchId)
-      .eq('is_published', true)
-      .order('category_name', { ascending: true })
-      .order('sort_order', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Failed to fetch published curriculum for batch ${batchId}: ${error.message}`);
-      throw new InternalServerErrorException('Could not load curriculum.');
-    }
-
-    const grouped: Record<string, any[]> = {};
-    for (const item of data ?? []) {
-      const cat = (item as any).category_name ?? 'General';
-      if (!grouped[cat]) grouped[cat] = [];
-      const rec = (item as any).recordings ?? {};
-      grouped[cat].push({
-        id: item.id,
-        recordingId: item.recording_id,
-        title: rec.title,
-        description: rec.description,
-        durationSeconds: rec.duration_seconds,
-        categoryName: item.category_name,
-        moduleName: item.module_name,
-        sortOrder: item.sort_order,
-      });
-    }
-
     return Object.entries(grouped).map(([category, items]) => ({
       category,
       items,
@@ -79,11 +119,15 @@ export class BatchCurriculumService {
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
       .insert({
         batch_id: batchId,
-        recording_id: dto.recordingId,
+        content_id: dto.contentId ?? null,
+        content_type: dto.contentType,
         category_name: dto.categoryName,
         module_name: dto.moduleName ?? null,
         sort_order: dto.sortOrder ?? 0,
         is_published: dto.isPublished ?? true,
+        pdf_url: dto.pdfUrl ?? null,
+        pdf_title: dto.pdfTitle ?? null,
+        title_override: dto.titleOverride ?? null,
       })
       .select('*')
       .single();
@@ -96,13 +140,16 @@ export class BatchCurriculumService {
   }
 
   async update(id: string, dto: UpdateCurriculumItemDto) {
-    const existing = await this.findById(id);
+    await this.findById(id);
 
     const updates: Record<string, any> = {};
     if (dto.categoryName !== undefined) updates.category_name = dto.categoryName;
     if (dto.moduleName !== undefined) updates.module_name = dto.moduleName;
     if (dto.sortOrder !== undefined) updates.sort_order = dto.sortOrder;
     if (dto.isPublished !== undefined) updates.is_published = dto.isPublished;
+    if (dto.pdfUrl !== undefined) updates.pdf_url = dto.pdfUrl;
+    if (dto.pdfTitle !== undefined) updates.pdf_title = dto.pdfTitle;
+    if (dto.titleOverride !== undefined) updates.title_override = dto.titleOverride;
 
     const { data, error } = await this.supabaseService.client
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
@@ -121,6 +168,30 @@ export class BatchCurriculumService {
   async remove(id: string) {
     await this.findById(id);
 
+    // Check 1: Block delete if student progress exists (DB enforces RESTRICT, but catch early)
+    const { count: progressCount, error: progressError } = await this.supabaseService.client
+      .from(TABLES.BATCH_CURRICULUM_ITEM_PROGRESS)
+      .select('id', { count: 'exact', head: true })
+      .eq('curriculum_id', id);
+
+    if (!progressError && (progressCount ?? 0) > 0) {
+      throw new BadRequestException(
+        `Cannot delete curriculum item "${id}": ${progressCount} student(s) have progress on this item. Remove progress records first.`,
+      );
+    }
+
+    // Warn about cascade-deleted prerequisites (informational only — CASCADE is acceptable)
+    const { data: prereqs, error: prereqError } = await this.supabaseService.client
+      .from(TABLES.BATCH_CURRICULUM_PREREQUISITES)
+      .select('id')
+      .or(`curriculum_id.eq.${id},prerequisite_id.eq.${id}`);
+
+    if (!prereqError && (prereqs ?? []).length > 0) {
+      this.logger.warn(
+        `Removing curriculum item "${id}" will cascade-delete ${prereqs.length} prerequisite link(s).`,
+      );
+    }
+
     const { error } = await this.supabaseService.client
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
       .delete()
@@ -130,22 +201,91 @@ export class BatchCurriculumService {
       this.logger.error(`Failed to remove curriculum item ${id}: ${error.message}`);
       throw new InternalServerErrorException(`Could not remove curriculum item: ${error.message}`);
     }
-    return { deleted: true };
+    return { deleted: true, cascadedPrerequisites: (prereqs ?? []).length };
+  }
+
+  async integrityCheck(batchId: string) {
+    const items = await this.fetchCurriculum(batchId, false);
+
+    const orphaned: any[] = [];
+    const progressConflicts: any[] = [];
+
+    for (const item of items) {
+      const type = item.content_type ?? 'recording';
+      const id = item.content_id;
+
+      // Checks 2-3: Orphan detection for each content type
+      if (id && type !== 'pdf') {
+        let exists = false;
+        try {
+          if (type === 'test') {
+            const { data } = await this.supabaseService.client
+              .from(TABLES.TESTS)
+              .select('id')
+              .eq('id', id)
+              .maybeSingle();
+            exists = !!data;
+          } else if (type === 'session') {
+            const { data } = await this.supabaseService.client
+              .from(TABLES.LIVE_SESSIONS)
+              .select('id')
+              .eq('id', id)
+              .maybeSingle();
+            exists = !!data;
+          } else {
+            // recording
+            const { data } = await this.supabaseService.client
+              .from(TABLES.RECORDINGS)
+              .select('id')
+              .eq('id', id)
+              .maybeSingle();
+            exists = !!data;
+          }
+        } catch {
+          exists = false;
+        }
+
+        if (!exists) {
+          orphaned.push({
+            curriculumId: item.id,
+            contentType: type,
+            contentId: id,
+            category: item.category_name,
+          });
+        }
+      }
+
+      // Check for progress records on this item
+      const { count: progCount } = await this.supabaseService.client
+        .from(TABLES.BATCH_CURRICULUM_ITEM_PROGRESS)
+        .select('id', { count: 'exact', head: true })
+        .eq('curriculum_id', item.id);
+
+      if (progCount && progCount > 0) {
+        progressConflicts.push({
+          curriculumId: item.id,
+          contentType: type,
+          studentCount: progCount,
+        });
+      }
+    }
+
+    return {
+      batchId,
+      totalItems: items.length,
+      orphanedReferences: orphaned,
+      itemsWithProgress: progressConflicts,
+    };
   }
 
   async reorder(batchId: string, dto: ReorderCurriculumDto) {
-    const updates = dto.items.map((item) => ({
-      id: item.id,
-      sort_order: item.sortOrder,
-    }));
-
-    for (const u of updates) {
+    for (const item of dto.items) {
       const { error } = await this.supabaseService.client
         .from(TABLES.BATCH_RECORDING_CURRICULUM)
-        .update({ sort_order: u.sort_order })
-        .eq('id', u.id);
+        .update({ sort_order: item.sortOrder })
+        .eq('id', item.id);
       if (error) {
-        this.logger.error(`Reorder failed for item ${u.id}: ${error.message}`);
+        this.logger.error(`Reorder failed for item ${item.id}: ${error.message}`);
         throw new InternalServerErrorException('Reorder failed.');
       }
     }

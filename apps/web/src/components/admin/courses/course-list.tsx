@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Plus, BookOpen, Pencil, Trash2, Copy, Eye } from 'lucide-react';
+import { Plus, BookOpen, Pencil, Trash2, Copy, Eye, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CourseForm } from './course-form';
@@ -192,10 +193,14 @@ export function CourseList({ initialCourses }: CourseListProps) {
                       key={batch.id}
                       className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm"
                     >
-                      <span className="flex items-center gap-2 text-gray-700">
+                      <Link
+                        href={`/admin/batches/${batch.id}`}
+                        className="flex items-center gap-2 text-gray-700 hover:text-brand-600 flex-1"
+                      >
                         <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
                         {batch.name}
-                      </span>
+                        <ExternalLink className="h-3 w-3 text-gray-400" />
+                      </Link>
                       <span className="flex items-center gap-1">
                         <button
                           onClick={() => openEditBatch(batch)}

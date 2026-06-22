@@ -44,6 +44,7 @@ export default async function StudentVideosPage() {
             <CurriculumView
               key={batch.batchId}
               batchName={batch.batchName}
+              batchId={batch.batchId}
               categories={batch.categories}
               recordings={recordings}
             />

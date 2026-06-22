@@ -17,6 +17,10 @@ export const ROUTES = {
     QUESTIONS: '/admin/questions',
     REVIEW_QUEUE: '/admin/review-queue',
     ANALYTICS: '/admin/analytics',
+    MONITORING: '/admin/monitoring',
+    PERFORMANCE: '/admin/performance',
+    ANNOUNCEMENTS: '/admin/announcements',
+    AUDIT_LOGS: '/admin/audit-logs',
   },
   STUDENT: {
     HOME: '/student',
@@ -25,6 +29,7 @@ export const ROUTES = {
     VIDEOS: '/student/videos',
     TESTS: '/student/tests',
     RESULTS: '/student/results',
+    NOTIFICATIONS: '/student/notifications',
   },
 } as const;
 
@@ -69,4 +74,21 @@ export const API_ROUTES = {
   ADMIN_REVIEW_QUEUE: '/admin/review-queue',
   ADMIN_ANALYTICS: '/admin/analytics',
   ZOOM_SIGNATURE: '/zoom/signature',
+  STUDENT_ACHIEVEMENTS: '/student/achievements',
+  STUDENT_CERTIFICATES: '/student/certificates',
+  // Phase 7A: Observability
+  OBSERVABILITY_ERRORS: '/observability/errors',
+  OBSERVABILITY_EVENTS: '/observability/events',
+  OBSERVABILITY_METRICS: '/observability/metrics',
+  OBSERVABILITY_DASHBOARD: '/observability/dashboard',
+  // Phase 7C: Notifications
+  ADMIN_ANNOUNCEMENTS: '/admin/announcements',
+  STUDENT_NOTIFICATIONS: '/student/notifications',
+  STUDENT_NOTIFICATIONS_UNREAD: '/student/notifications/unread-count',
+  STUDENT_NOTIFICATIONS_READ: '/student/notifications',
+  // Phase 7D: Certificate verification
+  CERTIFICATE_VERIFY: '/certificates/verify',
+  CERTIFICATE_STATUS: '/certificates',
+  // Phase 7E: Audit
+  ADMIN_AUDIT_LOGS: '/admin/audit-logs',
 } as const;

@@ -14,6 +14,7 @@ import {
   ClipboardList,
   BarChart3,
   User,
+  Bell,
 } from 'lucide-react';
 
 const visibleTabs = [
@@ -26,6 +27,7 @@ const visibleTabs = [
 const moreItems = [
   { href: ROUTES.STUDENT.TESTS, icon: ClipboardList, label: 'Tests' },
   { href: ROUTES.STUDENT.RESULTS, icon: BarChart3, label: 'Results' },
+  { href: ROUTES.STUDENT.NOTIFICATIONS, icon: Bell, label: 'Notifications' },
   { href: '/student/profile', icon: User, label: 'Profile' },
 ];
 

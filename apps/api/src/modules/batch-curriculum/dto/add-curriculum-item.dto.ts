@@ -1,8 +1,13 @@
-import { IsString, IsUUID, IsOptional, IsInt, IsBoolean, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsUUID, IsOptional, IsInt, IsBoolean, MinLength, MaxLength, IsIn } from 'class-validator';
 
 export class AddCurriculumItemDto {
-  @IsUUID('4', { message: 'recordingId must be a valid UUID.' })
-  recordingId!: string;
+  @IsOptional()
+  @IsUUID('4', { message: 'contentId must be a valid UUID.' })
+  contentId?: string;
+
+  @IsString()
+  @IsIn(['recording', 'test', 'session', 'pdf'], { message: 'contentType must be one of: recording, test, session, pdf.' })
+  contentType!: string;
 
   @IsString()
   @MinLength(1)
@@ -21,4 +26,18 @@ export class AddCurriculumItemDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @IsOptional()
+  @IsString()
+  pdfUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  pdfTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  titleOverride?: string;
 }

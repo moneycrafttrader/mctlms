@@ -63,4 +63,10 @@ export class BatchCurriculumController {
   ) {
     return this.service.reorder(batchId, dto);
   }
+
+  @Get('admin/batch-curriculum/:batchId/integrity')
+  @Roles(UserRole.ADMIN, UserRole.TEACHER)
+  integrity(@Param('batchId', ParseUUIDPipe) batchId: string) {
+    return this.service.integrityCheck(batchId);
+  }
 }

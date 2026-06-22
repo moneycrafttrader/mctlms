@@ -160,19 +160,54 @@ export class CoursesService {
 
     const batches = (course as any).batches ?? [];
     if (batches.length > 0) {
-      const batchInserts = batches.map((b: any) => ({
-        course_id: newCourse.id,
-        name: b.name,
-        schedule_type: b.schedule_type,
-        is_active: false,
-      }));
-
-      const { error: batchErr } = await this.supabaseService.client
+      const { data: newBatches, error: batchErr } = await this.supabaseService.client
         .from(TABLES.BATCHES)
-        .insert(batchInserts);
+        .insert(
+          batches.map((b: any) => ({
+            course_id: newCourse.id,
+            name: b.name,
+            schedule_type: b.schedule_type,
+            is_active: false,
+          })),
+        )
+        .select('id');
 
       if (batchErr) {
         this.logger.error(`Failed to copy batches for duplicated course: ${batchErr.message}`);
+      } else if (newBatches) {
+        for (let i = 0; i < batches.length; i++) {
+          const oldBatchId = batches[i].id;
+          const newBatchId = newBatches[i]?.id;
+          if (!oldBatchId || !newBatchId) continue;
+
+            const { data: curriculum } = await this.supabaseService.client
+              .from(TABLES.BATCH_RECORDING_CURRICULUM)
+              .select('*')
+              .eq('batch_id', oldBatchId);
+
+            if (curriculum && curriculum.length > 0) {
+              const { error: copyErr } = await this.supabaseService.client
+                .from(TABLES.BATCH_RECORDING_CURRICULUM)
+                .insert(
+                  (curriculum as any[]).map((c: any) => ({
+                    batch_id: newBatchId,
+                    content_id: c.content_id,
+                    content_type: c.content_type ?? 'recording',
+                    category_name: c.category_name,
+                    module_name: c.module_name,
+                    sort_order: c.sort_order,
+                    is_published: false,
+                    pdf_url: c.pdf_url,
+                    pdf_title: c.pdf_title,
+                    title_override: c.title_override,
+                  })),
+                );
+
+              if (copyErr) {
+                this.logger.error(`Failed to copy curriculum for batch ${oldBatchId}: ${copyErr.message}`);
+              }
+            }
+        }
       }
     }
 

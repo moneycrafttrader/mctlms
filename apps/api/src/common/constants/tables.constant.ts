@@ -48,4 +48,22 @@ export const TABLES = {
   TEST_RESULTS: 'test_results',
   TEST_ANALYTICS_SNAPSHOTS: 'test_analytics_snapshots',
   BATCH_RECORDING_CURRICULUM: 'batch_recording_curriculum',
+  BATCH_CURRICULUM_RULES: 'batch_curriculum_rules',
+  BATCH_CURRICULUM_PREREQUISITES: 'batch_curriculum_prerequisites',
+  BATCH_CURRICULUM_ITEM_PROGRESS: 'batch_curriculum_item_progress',
+  ACHIEVEMENT_DEFINITIONS: 'achievement_definitions',
+  STUDENT_ACHIEVEMENTS: 'student_achievements',
+  CERTIFICATES: 'certificates',
+  // Phase 7A: Observability
+  SYSTEM_ERRORS: 'system_errors',
+  SYSTEM_EVENTS: 'system_events',
+  PERFORMANCE_METRICS: 'performance_metrics',
+  // Phase 7C: Notifications
+  ANNOUNCEMENTS: 'announcements',
+  NOTIFICATIONS: 'notifications',
+  NOTIFICATION_READS: 'notification_reads',
+  // Phase 7D: Certificate Automation
+  CERTIFICATE_VERIFICATIONS: 'certificate_verifications',
+  // Phase 7E: Audit
+  AUDIT_LOGS: 'audit_logs',
 } as const;

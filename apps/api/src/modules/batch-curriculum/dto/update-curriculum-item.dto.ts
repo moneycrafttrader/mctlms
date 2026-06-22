@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, IsBoolean, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsBoolean, MaxLength, IsIn } from 'class-validator';
 
 export class UpdateCurriculumItemDto {
   @IsOptional()
@@ -18,4 +18,19 @@ export class UpdateCurriculumItemDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  pdfUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  pdfTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  titleOverride?: string;
 }
