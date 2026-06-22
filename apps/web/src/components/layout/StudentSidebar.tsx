@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ROUTES } from '@/lib/constants';
+import { useSession } from '@/hooks/useSession';
 import {
   LayoutDashboard,
   BookOpen,
@@ -13,6 +14,7 @@ import {
   BarChart3,
   User,
   Trophy,
+  LogOut,
 } from 'lucide-react';
 
 const navItems = [
@@ -32,6 +34,7 @@ function isActive(href: string, exact: boolean | undefined, pathname: string) {
 
 export function StudentSidebar() {
   const pathname = usePathname();
+  const { logout } = useSession();
 
   return (
     <>
@@ -74,13 +77,13 @@ export function StudentSidebar() {
             <p className="truncate text-2xs text-brand-200">Online</p>
           </div>
         </div>
-        <Link
-          href={ROUTES.LOGIN}
-          className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-brand-200 transition-colors hover:bg-sidebar-hover hover:text-white"
+        <button
+          onClick={logout}
+          className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-brand-200 transition-colors hover:bg-sidebar-hover hover:text-white"
         >
-          <User className="h-4 w-4" />
+          <LogOut className="h-4 w-4" />
           Sign out
-        </Link>
+        </button>
       </div>
     </>
   );

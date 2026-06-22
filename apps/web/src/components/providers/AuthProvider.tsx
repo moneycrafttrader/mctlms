@@ -87,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // If already authenticated (set by login page), just start lifecycle and skip hydration
     if (store.status === 'authenticated' && store.user && store.token) {
-      log('Store already authenticated — starting lifecycle directly');
+      log('[AUTH BOOTSTRAP] Store already authenticated — starting lifecycle directly (login page set cache + store)');
       startLifecycle();
       return;
     }
@@ -107,7 +107,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       timeoutRef.current = setTimeout(() => {
         const current = useAuthStore.getState();
         if (current.status === 'loading' || current.status === 'idle') {
-          log('AUTH TIMEOUT — 5s elapsed. Status still:', current.status);
+          log('[AUTH BOOTSTRAP] TIMEOUT — 5s elapsed. Status still:', current.status);
+          log('[AUTH BOOTSTRAP] Calling clearAuthCookies + setAuthFailed — terminal transition');
           clearAuthCookies();
           current.setAuthFailed('Authentication timed out. Please refresh the page.');
         }
@@ -115,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     function startLifecycle() {
+      log('[AUTH BOOTSTRAP] Starting lifecycle (multi-tab sync, offline detection, validation, heartbeat)');
       cleanupRef.current.push(setupMultiTabSync());
       cleanupRef.current.push(setupOfflineDetection());
       startBackgroundValidation();
@@ -193,9 +195,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!validateResult.ok) {
         log('Phase 2: token invalid via validate-session');
-        logTransition(store.status, 'idle', 'Phase 2 validate-session failed');
+        logTransition(store.status, 'expired', 'Phase 2 validate-session failed');
         clearAuthCookies();
-        store.setStatus('idle');
+        store.setStatus('expired');
+        store.setError('Session expired. Please login again.');
         return;
       }
 

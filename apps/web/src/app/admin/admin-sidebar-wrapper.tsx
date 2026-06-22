@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { ROUTES } from '@/lib/constants';
+import { useSession } from '@/hooks/useSession';
 import {
   LayoutDashboard,
   BookOpen,
@@ -38,6 +39,7 @@ const navItems = [
 
 export function AdminSidebarWrapper() {
   const pathname = usePathname();
+  const { logout } = useSession();
 
   return (
     <>
@@ -66,10 +68,13 @@ export function AdminSidebarWrapper() {
         })}
       </nav>
       <div className="border-t border-sidebar-divider px-3 py-4">
-        <Link href={ROUTES.LOGIN} className="sidebar-link">
-          <LogOut className="h-5 w-5" />
-          Logout
-        </Link>
+        <button
+          onClick={logout}
+          className="sidebar-link w-full"
+        >
+          <LogOut className="h-5 w-5 shrink-0" />
+          <span>Logout</span>
+        </button>
       </div>
     </>
   );

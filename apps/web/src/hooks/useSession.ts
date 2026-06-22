@@ -18,6 +18,7 @@ import {
   broadcastLogout,
 } from '@/lib/session-manager';
 import { startHeartbeat, stopHeartbeat } from '@/lib/session-heartbeat';
+import type { DeviceFingerprint } from '@/lib/hooks/useDeviceFingerprint';
 
 interface UseSessionReturn {
   user: AuthUser | null;
@@ -30,7 +31,7 @@ interface UseSessionReturn {
   isExpired: boolean;
   isTakeover: boolean;
   isOffline: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, device?: DeviceFingerprint) => Promise<void>;
   logout: () => void;
   clearError: () => void;
 }
@@ -40,15 +41,17 @@ export function useSession(): UseSessionReturn {
   const router = useRouter();
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, device?: DeviceFingerprint) => {
       const storeState = useAuthStore.getState();
       storeState.setStatus('loading');
       storeState.setError(null);
 
       try {
+        const body: Record<string, unknown> = { email, password };
+        if (device) body.device = device;
         const result: any = await fetchApi(API_ROUTES.AUTH.LOGIN, {
           method: 'POST',
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify(body),
         });
 
         const { token, user } = result;
@@ -109,6 +112,7 @@ export function useSession(): UseSessionReturn {
 
   const logout = useCallback(() => {
     const storeState = useAuthStore.getState();
+    console.log('[AUTH LOGOUT] Called — status:', storeState.status, 'user:', storeState.user?.id);
 
     // Clear everything
     clearSessionCache();

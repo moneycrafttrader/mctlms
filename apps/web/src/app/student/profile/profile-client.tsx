@@ -1,9 +1,9 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { User, Shield, Lock, LogOut, Users } from 'lucide-react';
 import { ROUTES } from '@/lib/constants';
+import { useSession } from '@/hooks/useSession';
 
 interface Props {
   email: string;
@@ -11,18 +11,7 @@ interface Props {
 }
 
 export function ProfileClient({ email, batchNames }: Props) {
-  const router = useRouter();
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/auth/logout', { method: 'POST' });
-    } catch {
-      // silent
-    }
-    document.cookie = 'access_token=; path=/; max-age=0';
-    document.cookie = 'must_change_password=; path=/; max-age=0';
-    router.push(ROUTES.LOGIN);
-  };
+  const { logout } = useSession();
 
   return (
     <div className="space-y-4">
@@ -69,7 +58,7 @@ export function ProfileClient({ email, batchNames }: Props) {
       </Link>
 
       <button
-        onClick={handleLogout}
+        onClick={logout}
         className="flex w-full items-center justify-center gap-2 rounded-card border border-status-live px-4 py-3 text-sm font-semibold text-status-live transition-colors hover:bg-red-50"
       >
         <LogOut className="h-4 w-4" />

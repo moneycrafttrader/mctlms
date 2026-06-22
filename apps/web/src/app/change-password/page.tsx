@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchApi, ApiError } from '@/lib/api-client';
 import { API_ROUTES, ROUTES } from '@/lib/constants';
-import { getToken, clearMustChangePassword } from '@/lib/auth';
+import { getAccessTokenSync } from '@/lib/auth-token';
+import { clearMustChangePassword } from '@/lib/auth';
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function ChangePasswordPage() {
   const [initialCheckDone, setInitialCheckDone] = useState(false);
 
   useEffect(() => {
-    const token = getToken();
+    const token = getAccessTokenSync();
     if (!token) {
       router.replace(ROUTES.LOGIN);
       return;

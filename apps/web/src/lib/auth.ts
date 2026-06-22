@@ -54,14 +54,6 @@ export function clearSessionCache(): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
-// --- Legacy localStorage auth token (used by change-password page) ---
-
-const TOKEN_KEY = 'auth-token';
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
 // --- Must-change-password helpers ---
 
 export function getMustChangePassword(): boolean {
@@ -79,6 +71,12 @@ export function clearMustChangePassword(): void {
 // --- Cookie helpers ---
 
 export function clearAuthCookies(): void {
+  if (typeof window !== 'undefined') {
+    console.group('[AUTH EVENT] clearAuthCookies');
+    console.trace();
+    console.log('timestamp:', new Date().toISOString());
+    console.groupEnd();
+  }
   document.cookie = 'access_token=; path=/; max-age=0; secure; samesite=lax';
   document.cookie = 'must_change_password=; path=/; max-age=0; secure; samesite=lax';
 }

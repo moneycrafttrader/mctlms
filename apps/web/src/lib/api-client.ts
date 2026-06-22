@@ -1,3 +1,6 @@
+import { getAccessToken } from './auth-token';
+import { validateTokenOnServer } from './auth-validation';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -43,31 +46,10 @@ const isDev = process.env.NODE_ENV === 'development';
 
 const AUTH_ENDPOINTS = new Set(['/auth/login', '/auth/validate-session']);
 
-async function getAccessToken(): Promise<string | undefined> {
-  if (typeof window === 'undefined') {
-    try {
-      const { cookies } = await import('next/headers');
-      const cookieStore = cookies();
-      return cookieStore.get('access_token')?.value;
-    } catch {
-      return undefined;
-    }
-  }
-  const match = document.cookie.match(/(?:^|;\s*)access_token=([^;]*)/);
-  return match ? match[1] : undefined;
-}
-
 async function validateSession(): Promise<boolean> {
-  try {
-    const token = await getAccessToken();
-    const res = await fetch(`${API_URL}/auth/validate-session`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      credentials: 'include',
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  const token = await getAccessToken();
+  if (!token) return false;
+  return validateTokenOnServer(token);
 }
 
 function createApiError(status: number, body: any): ApiError {

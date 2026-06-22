@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchApi, ApiError } from '@/lib/api-client';
 import { ROUTES, API_ROUTES } from '@/lib/constants';
-import { setMustChangePassword, setSessionCache } from '@/lib/auth';
-import { useAuthStore, type AuthUser } from '@/stores/auth.store';
+import { useSession } from '@/hooks/useSession';
 import { useDeviceFingerprint } from '@/lib/hooks/useDeviceFingerprint';
 
 export default function LoginPage() {
@@ -14,6 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { login } = useSession();
   const fingerprint = useDeviceFingerprint();
 
   // Forgot password state
@@ -28,43 +28,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const body: Record<string, unknown> = { email, password };
-      if (fingerprint) {
-        body.device = fingerprint;
-      }
-      const result: any = await fetchApi(API_ROUTES.AUTH.LOGIN, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-
-      const { token, user } = result;
-
-      document.cookie =
-        'access_token=' + token + '; path=/; max-age=86400; secure; samesite=lax';
-      document.cookie =
-        'must_change_password=' + (user.mustChangePassword ? 'true' : 'false') +
-        '; path=/; max-age=86400; secure; samesite=lax';
-
-      setMustChangePassword(user.mustChangePassword);
-
-      // Persist to localStorage so AuthProvider Phase 1 finds it on next page
-      const authUser: AuthUser = { id: user.id, name: user.name, email: user.email, role: user.role };
-      setSessionCache({
-        user: authUser,
-        token,
-        mustChangePassword: user.mustChangePassword ?? false,
-        sessionCount: 0,
-      });
-      // Update Zustand store so GuardRoute sees authenticated state immediately
-      useAuthStore.getState().setAuth(authUser, token, user.mustChangePassword ?? false);
-
-      if (user.mustChangePassword) {
-        router.push(ROUTES.CHANGE_PASSWORD);
-      } else if (user.role === 'student') {
-        router.push(ROUTES.STUDENT.HOME);
-      } else {
-        router.push(ROUTES.ADMIN.HOME);
-      }
+      await login(email, password, fingerprint ?? undefined);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

@@ -1,68 +1,67 @@
 import { getSessionCache, extendSessionCache, clearSessionCache, clearAuthCookies } from './auth';
+import { validateTokenOnServer } from './auth-validation';
 import { useAuthStore } from '@/stores/auth.store';
 import { stopHeartbeat } from './session-heartbeat';
 
 const VALIDATION_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 const EXPIRY_GRACE_MS = 2 * 60 * 1000; // 2-minute grace before showing overlay
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const CHANNEL_NAME = 'mct-auth-channel';
 
 let validatorTimer: ReturnType<typeof setInterval> | null = null;
 let channel: BroadcastChannel | null = null;
 let isOffline = false;
 
-function getToken(): string | null {
-  const cache = getSessionCache();
-  return cache?.token ?? null;
-}
-
-async function validateTokenOnServer(): Promise<boolean> {
-  const token = getToken();
-  if (!token) return false;
-  try {
-    const res = await fetch(`${API_URL}/auth/validate-session`, {
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: 'include',
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 export async function runSessionValidation(): Promise<void> {
-  if (isOffline) return;
+  if (isOffline) {
+    console.log('[AUTH VALIDATION] Skipping — offline');
+    return;
+  }
 
   const store = useAuthStore.getState();
-  if (store.status !== 'authenticated') return;
+  if (store.status !== 'authenticated') {
+    console.log('[AUTH VALIDATION] Skipping — status is', store.status);
+    return;
+  }
 
   const cache = getSessionCache();
   if (!cache) {
+    console.log('[AUTH VALIDATION] No session cache — calling handleExpiredSession');
     handleExpiredSession();
     return;
   }
 
   const timeUntilExpiry = cache.expiresAt - Date.now();
+  console.log(`[AUTH VALIDATION] Cache expires in ${Math.round(timeUntilExpiry / 1000)}s`);
 
   // If cache is still fresh, just extend and return
   if (timeUntilExpiry > EXPIRY_GRACE_MS) {
+    console.log('[AUTH VALIDATION] Cache still fresh — extending');
     extendSessionCache();
     return;
   }
 
   // Cache is near/at expiry — validate against server
-  const valid = await validateTokenOnServer();
+  console.log('[AUTH VALIDATION] Cache near expiry — validating against server');
+  const valid = await validateTokenOnServer(cache.token);
   if (valid) {
+    console.log('[AUTH VALIDATION] Server validation passed — extending cache');
     extendSessionCache();
     store.setStatus('authenticated');
     store.setError(null);
   } else {
+    console.log('[AUTH VALIDATION] Server validation FAILED — calling handleExpiredSession');
     handleExpiredSession();
   }
 }
 
-function handleExpiredSession(): void {
+export function handleExpiredSession(): void {
   const store = useAuthStore.getState();
+  console.group('[AUTH EVENT] handleExpiredSession');
+  console.trace();
+  console.log('previous status:', store.status);
+  console.log('user id:', store.user?.id);
+  console.log('timestamp:', new Date().toISOString());
+  console.groupEnd();
   store.setStatus('expired');
   store.setError('Session expired. Please login again.');
   clearSessionCache();
@@ -71,8 +70,14 @@ function handleExpiredSession(): void {
   stopHeartbeat();
 }
 
-function handleTakeover(): void {
+export function handleTakeover(): void {
   const store = useAuthStore.getState();
+  console.group('[AUTH EVENT] handleTakeover');
+  console.trace();
+  console.log('previous status:', store.status);
+  console.log('user id:', store.user?.id);
+  console.log('timestamp:', new Date().toISOString());
+  console.groupEnd();
   store.setStatus('takeover');
   store.setError('Your session was taken over. You have been logged out on this device.');
   clearSessionCache();

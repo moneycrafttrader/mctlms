@@ -31,7 +31,6 @@ interface AuthState {
   ) => void;
   setAuthFailed: (error: string) => void;
   logout: () => void;
-  updateUser: (partial: Partial<AuthUser>) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -52,11 +51,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       sessionCount: state.sessionCount + 1,
     })),
 
-  updateUser: (partial: Partial<AuthUser>) =>
-    set((state) => ({
-      user: state.user ? { ...state.user, ...partial } : state.user,
-    })),
-
   setStatus: (status) => set({ status }),
 
   setError: (error) => set({ error }),
@@ -70,15 +64,36 @@ export const useAuthStore = create<AuthState>((set) => ({
       error: null,
     }),
 
-  setAuthFailed: (error) =>
-    set({ status: 'error', error, user: null, token: null }),
+  setAuthFailed: (error) => {
+    if (typeof window !== 'undefined') {
+      console.group('[AUTH EVENT] setAuthFailed');
+      console.trace();
+      const s = useAuthStore.getState();
+      console.log('previous status:', s.status);
+      console.log('user id:', s.user?.id);
+      console.log('reason:', error);
+      console.log('timestamp:', new Date().toISOString());
+      console.groupEnd();
+    }
+    set({ status: 'error', error, user: null, token: null });
+  },
 
-  logout: () =>
+  logout: () => {
+    if (typeof window !== 'undefined') {
+      console.group('[AUTH EVENT] store.logout');
+      console.trace();
+      const s = useAuthStore.getState();
+      console.log('current status:', s.status);
+      console.log('user id:', s.user?.id);
+      console.log('timestamp:', new Date().toISOString());
+      console.groupEnd();
+    }
     set({
       user: null,
       token: null,
       status: 'idle',
       error: null,
       mustChangePassword: false,
-    }),
+    });
+  },
 }));

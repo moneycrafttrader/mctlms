@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Loader2, AlertTriangle, RefreshCw, LogOut } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
+import { useSession } from '@/hooks/useSession';
 import { getRoleForPath, hasRequiredRole } from './permissions';
 import { logAuthDenied, logAccessDenied } from './audit';
 import { cn } from '@/lib/utils';
@@ -61,8 +62,7 @@ export function useGuard(): GuardResult {
 
 export function GuardRoute({ children }: { children: React.ReactNode }) {
   const { allowed, isLoading, reason } = useGuard();
-  const { error, logout } = useAuthStore();
-  const router = useRouter();
+  const { error, logout } = useSession();
 
   if (isLoading) {
     return <AuthLoadingScreen />;
@@ -84,10 +84,7 @@ export function GuardRoute({ children }: { children: React.ReactNode }) {
     return (
       <UnauthorizedPage
         reason={reason}
-        onLogin={() => {
-          logout();
-          router.push('/login');
-        }}
+        onLogin={logout}
       />
     );
   }
