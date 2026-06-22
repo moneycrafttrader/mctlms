@@ -151,7 +151,6 @@ export class AchievementsService {
       .from(TABLES.CERTIFICATE_VERIFICATIONS)
       .select('id, certificate_id, token, expires_at, verified_at')
       .eq('token', token)
-      .single()
       .maybeSingle();
 
     if (!verification) {
@@ -192,7 +191,6 @@ export class AchievementsService {
       .from(TABLES.CERTIFICATES)
       .select('certificate_number, issued_at, courses(name), profiles(full_name)')
       .eq('id', certificateId)
-      .single()
       .maybeSingle();
 
     if (!cert) throw new NotFoundException('Certificate not found.');
@@ -302,7 +300,7 @@ export class AchievementsService {
            <p>Your certificate (${c.certificate_number}) is attached to this email.</p>
            <p>You can also verify your certificate at any time: <a href="${this.getFrontendUrl()}/verify-certificate?token=${c.id}">Verify Certificate</a></p>
            <p>— MCT Learn Team</p>`,
-          [{ filename: `Certificate-${c.certificate_number}.pdf`, content: pdfBuffer.toString('base64'), contentType: 'application/pdf' }],
+          [{ filename: `Certificate-${c.certificate_number}.pdf`, content: pdfBuffer }],
         );
       }
 
