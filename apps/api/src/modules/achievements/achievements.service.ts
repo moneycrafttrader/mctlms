@@ -199,7 +199,7 @@ export class AchievementsService {
     // Fetch certificate details
     const { data: cert } = await this.supabaseService.client
       .from(TABLES.CERTIFICATES)
-      .select('*, courses(name), profiles(full_name, email)')
+      .select('*, courses(name), profiles(name, email)')
       .eq('id', v.certificate_id)
       .single();
 
@@ -212,7 +212,7 @@ export class AchievementsService {
   async getVerificationStatus(certificateId: string) {
     const { data: cert } = await this.supabaseService.client
       .from(TABLES.CERTIFICATES)
-      .select('certificate_number, issued_at, courses(name), profiles(full_name)')
+      .select('certificate_number, issued_at, courses(name), profiles(name)')
       .eq('id', certificateId)
       .maybeSingle();
 
@@ -268,7 +268,7 @@ export class AchievementsService {
   async generateCertificatePdf(certificateId: string, userId: string, courseId: string) {
     const { data: cert } = await this.supabaseService.client
       .from(TABLES.CERTIFICATES)
-      .select('*, courses(name), profiles(full_name, email)')
+      .select('*, courses(name), profiles(name, email)')
       .eq('id', certificateId)
       .single();
 
@@ -282,7 +282,7 @@ export class AchievementsService {
     const template = Handlebars.compile(templateSource);
 
     const html = template({
-      studentName: c.profiles?.full_name ?? 'Student',
+      studentName: c.profiles?.name ?? 'Student',
       courseName: c.courses?.name ?? 'Course',
       issueDate: new Date(c.issued_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }),
       certificateNumber: c.certificate_number,
@@ -307,7 +307,7 @@ export class AchievementsService {
         await this.emailService.sendEmail(
           studentEmail,
           `Certificate of Completion — ${c.courses?.name ?? 'Course'}`,
-          `<p>Dear ${c.profiles?.full_name ?? 'Student'},</p>
+          `<p>Dear ${c.profiles?.name ?? 'Student'},</p>
            <p>Congratulations on completing <strong>${c.courses?.name ?? 'Course'}</strong>!</p>
            <p>Your certificate (${c.certificate_number}) is attached to this email.</p>
            <p>You can also verify your certificate at any time: <a href="${this.getFrontendUrl()}/verify-certificate?token=${c.id}">Verify Certificate</a></p>

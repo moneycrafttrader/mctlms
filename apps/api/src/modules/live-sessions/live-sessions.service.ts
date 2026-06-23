@@ -182,7 +182,7 @@ export class LiveSessionsService {
       dto.batchIds.map((batchId) =>
         this.supabaseService.client
           .from(TABLES.BATCH_STUDENTS)
-          .select('user_id, users!inner(id, name, email)')
+          .select('user_id, profiles!inner(id, name, email)')
           .eq('batch_id', batchId),
       ),
     );
@@ -194,7 +194,7 @@ export class LiveSessionsService {
       const result = studentResults[i];
       if (result.status === 'fulfilled' && result.value.data) {
         for (const item of result.value.data as any[]) {
-          const user = item.users;
+          const user = item.profiles;
           if (!studentMap.has(user.id)) {
             studentMap.set(user.id, user);
           }

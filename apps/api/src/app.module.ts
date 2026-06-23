@@ -54,6 +54,9 @@ import { ObservabilityModule } from './modules/observability/observability.modul
 import { ResultsModule } from './modules/results/results.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
+// ── Root controller ──────────────────────────────────────────
+import { AppController } from './app.controller';
+
 // ── Common providers ─────────────────────────────────────────
 import { SupabaseService } from './common/services/supabase.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -137,6 +140,7 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     ResultsModule,
     UploadsModule,
   ],
+  controllers: [AppController],
   exports: [
     SupabaseService,
   ],

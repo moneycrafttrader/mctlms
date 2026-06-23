@@ -65,7 +65,7 @@ export class AttendanceService {
       .from(TABLES.ATTENDANCE)
       .select(`
         *,
-        users!inner(id, name, email)
+        profiles!inner(id, name, email)
       `)
       .eq('session_id', sessionId);
 
@@ -273,7 +273,7 @@ export class AttendanceService {
     // Get enrolled students
     const { data: studentLinks } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
-      .select('user_id, users!inner(id, name, email)')
+      .select('user_id, profiles!inner(id, name, email)')
       .eq('batch_id', batchId);
 
     const students = (studentLinks ?? []).map((s: any) => s.users);

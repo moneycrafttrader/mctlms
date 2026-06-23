@@ -307,7 +307,7 @@ export class BatchesService {
 
     const { data, error, count } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
-      .select('user_id, users!inner(id, name, email, role, is_active, created_at)', { count: 'exact' })
+      .select('user_id, profiles!inner(id, name, email, role, is_active, created_at)', { count: 'exact' })
       .eq('batch_id', batchId)
       .range(from, to);
 
@@ -317,7 +317,7 @@ export class BatchesService {
     }
 
     return {
-      items: (data ?? []).map((item: any) => item.users),
+      items: (data ?? []).map((item: any) => item.profiles),
       total: count ?? 0,
       page,
       limit,
@@ -327,7 +327,7 @@ export class BatchesService {
   async getTeachers(batchId: string) {
     const { data, error } = await this.supabaseService.client
       .from(TABLES.BATCH_TEACHERS)
-      .select('user_id, users!inner(id, name, email, role, is_active, created_at)')
+      .select('user_id, profiles!inner(id, name, email, role, is_active, created_at)')
       .eq('batch_id', batchId);
 
     if (error) {
@@ -335,7 +335,7 @@ export class BatchesService {
       throw new BadRequestException('Could not retrieve teachers');
     }
 
-    return (data ?? []).map((item: any) => item.users);
+    return (data ?? []).map((item: any) => item.profiles);
   }
 
   async getSessionsForBatch(batchId: string) {

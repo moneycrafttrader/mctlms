@@ -253,7 +253,7 @@ export class EvaluationService {
           status,
           submitted_at,
           user_id,
-          profiles!inner(id, full_name, email)
+          profiles!inner(id, name, email)
         ),
         test_answers!inner(
           id,
