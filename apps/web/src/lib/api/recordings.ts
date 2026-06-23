@@ -6,6 +6,9 @@ export interface CreateRecordingData {
   description?: string;
   videoUrl?: string;
   batchIds: string[];
+  categoryName?: string;
+  moduleName?: string;
+  isPublished?: boolean;
 }
 
 export interface Recording {
@@ -36,7 +39,8 @@ export async function createRecording(
 }
 
 export async function getRecordings() {
-  return fetchApi<Recording[]>(API_ROUTES.ADMIN_RECORDINGS);
+  const result = await fetchApi<{ items: Recording[]; total: number; page: number; limit: number }>(API_ROUTES.ADMIN_RECORDINGS);
+  return result?.items ?? [];
 }
 
 // ── Batch Curriculum ─────────────────────────────────────────

@@ -2,6 +2,7 @@ import {
   IsString,
   IsArray,
   IsUUID,
+  IsBoolean,
   IsOptional,
   ArrayMinSize,
   MinLength,
@@ -24,4 +25,16 @@ export class CreateRecordingDto {
   @IsUUID('4', { each: true })
   @ArrayMinSize(1)
   batchIds: string[];
+
+  @IsString()
+  @IsOptional()
+  categoryName?: string;
+
+  @IsString()
+  @IsOptional()
+  moduleName?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isPublished?: boolean;
 }

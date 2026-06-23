@@ -110,30 +110,22 @@ export class RecordingsService {
       throw new BadRequestException('Failed to create recording');
     }
 
-    const tx = new Transaction();
-
     const batchLinks = dto.batchIds.map((batchId) => ({
       recording_id: recording.id,
       batch_id: batchId,
     }));
 
-    await tx.run([
-      {
-        name: 'insert batch links',
-        execute: async () => {
-          const { error: linkError } = await this.supabaseService.client
-            .from(TABLES.RECORDING_BATCHES)
-            .insert(batchLinks);
-          if (linkError) throw linkError;
-        },
-        rollback: async () => {
-          await this.supabaseService.client
-            .from(TABLES.RECORDINGS)
-            .delete()
-            .eq('id', recording.id);
-        },
-      },
-    ]);
+    const { error: linkError } = await this.supabaseService.client
+      .from(TABLES.RECORDING_BATCHES)
+      .insert(batchLinks);
+
+    if (linkError) {
+      await this.supabaseService.client.from(TABLES.RECORDINGS).delete().eq('id', recording.id);
+      this.logger.error(`Failed to link recording to batches: ${linkError.message}`);
+      throw new BadRequestException('Failed to link recording to batches');
+    }
+
+    await this.autoCreateCurriculumEntries(recording.id, dto);
 
     const { data: batchNames } = await this.supabaseService.client
       .from(TABLES.RECORDING_BATCHES)
@@ -229,24 +221,15 @@ export class RecordingsService {
         batch_id: batchId,
       }));
 
-      const tx = new Transaction();
-      await tx.run([
-        {
-          name: 'upsert batch links',
-          execute: async () => {
-            const { error: linkError } = await this.supabaseService.client
-              .from(TABLES.RECORDING_BATCHES)
-              .upsert(batchRecords, { onConflict: 'recording_id,batch_id' });
-            if (linkError) throw linkError;
-          },
-          rollback: async () => {
-            await this.supabaseService.client
-              .from(TABLES.RECORDINGS)
-              .delete()
-              .eq('id', recording.id);
-          },
-        },
-      ]);
+      const { error: linkError } = await this.supabaseService.client
+        .from(TABLES.RECORDING_BATCHES)
+        .upsert(batchRecords, { onConflict: 'recording_id,batch_id' });
+
+      if (linkError) {
+        this.logger.error(`Failed to link recording to batches: ${linkError.message}`);
+      }
+
+      await this.autoCreateCurriculumEntries(recording.id, dto);
     }
 
     return { recording, uploadUrl };
@@ -600,5 +583,29 @@ export class RecordingsService {
       status: v.status,
       createdAt: v.created_at,
     }));
+  }
+
+  private async autoCreateCurriculumEntries(recordingId: string, dto: CreateRecordingDto) {
+    const categoryName = dto.categoryName || 'General';
+    const moduleName = dto.moduleName || null;
+    const isPublished = dto.isPublished ?? true;
+
+    const entries = dto.batchIds.map((batchId) => ({
+      batch_id: batchId,
+      content_id: recordingId,
+      content_type: 'recording',
+      category_name: categoryName,
+      module_name: moduleName,
+      sort_order: 0,
+      is_published: isPublished,
+    }));
+
+    const { error } = await this.supabaseService.client
+      .from(TABLES.BATCH_RECORDING_CURRICULUM)
+      .upsert(entries, { onConflict: 'batch_id,content_id,content_type' });
+
+    if (error) {
+      this.logger.warn(`Failed to auto-create curriculum entries for recording ${recordingId}: ${error.message}`);
+    }
   }
 }

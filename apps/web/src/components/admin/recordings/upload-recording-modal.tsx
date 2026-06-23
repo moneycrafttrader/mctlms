@@ -51,6 +51,9 @@ export function UploadRecordingModal({
   const [loadingBatches, setLoadingBatches] = useState(true);
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [categoryName, setCategoryName] = useState('General');
+  const [moduleName, setModuleName] = useState('');
+  const [isPublished, setIsPublished] = useState(true);
   const [phase, setPhase] = useState<UploadPhase>({ phase: 'idle' });
 
   const fetchBatches = useCallback(async () => {
@@ -72,6 +75,9 @@ export function UploadRecordingModal({
       setFile(null);
       setSelectedBatchIds(new Set());
       setDropdownOpen(false);
+      setCategoryName('General');
+      setModuleName('');
+      setIsPublished(true);
       setPhase({ phase: 'idle' });
       fetchBatches();
     }
@@ -109,6 +115,9 @@ export function UploadRecordingModal({
           title: title.trim(),
           description: description.trim() || undefined,
           batchIds: Array.from(selectedBatchIds),
+          categoryName: categoryName.trim() || undefined,
+          moduleName: moduleName.trim() || undefined,
+          isPublished,
         },
       );
 
@@ -299,6 +308,51 @@ export function UploadRecordingModal({
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Category
+            </label>
+            <input
+              type="text"
+              value={categoryName}
+              onChange={(e) => setCategoryName(e.target.value)}
+              disabled={isSubmitting}
+              placeholder="e.g. Week 1, Module 2"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-100"
+            />
+          </div>
+
+          {/* Module */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Module
+            </label>
+            <input
+              type="text"
+              value={moduleName}
+              onChange={(e) => setModuleName(e.target.value)}
+              disabled={isSubmitting}
+              placeholder="e.g. Core Concepts"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-100"
+            />
+          </div>
+
+          {/* Publish toggle */}
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="publish-toggle"
+              checked={isPublished}
+              onChange={(e) => setIsPublished(e.target.checked)}
+              disabled={isSubmitting}
+              className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            />
+            <label htmlFor="publish-toggle" className="text-sm font-medium text-gray-700">
+              Publish immediately
+            </label>
           </div>
 
           {/* Progress / Status */}
