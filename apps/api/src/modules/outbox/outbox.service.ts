@@ -1,6 +1,7 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { InvoicesService } from '../invoices/invoices.service';
 
 export const OUTBOX_TABLE = 'outbox_messages';
 
@@ -11,8 +12,8 @@ export class OutboxService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
-    @Inject(forwardRef(() => 'InvoicesService'))
-    private readonly invoicesService: any,
+    @Inject(forwardRef(() => InvoicesService))
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   async enqueue(messageType: 'receipt' | 'invoice', payload: Record<string, any>): Promise<void> {
