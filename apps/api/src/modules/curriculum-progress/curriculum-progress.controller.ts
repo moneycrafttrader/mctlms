@@ -19,7 +19,7 @@ export class CurriculumProgressController {
   @Get('admin/batches/:batchId/progress')
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   getAdminProgress(@Param('batchId', ParseUUIDPipe) batchId: string) {
-    return { batchId };
+    return this.service.getAdminProgress(batchId);
   }
 
   @Get('batches/:batchId/progress')

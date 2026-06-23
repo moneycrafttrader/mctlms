@@ -33,6 +33,7 @@ import { TABLES } from '../../common/constants/tables.constant';
 import { DeviceService } from '../devices/device.service';
 import { EmailService } from '../email/email.service';
 import { PlaybackGuardService } from '../playback/playback-guard.service';
+import { ObservabilityService } from '../observability/observability.service';
 
 /** Maximum failed login attempts before rate-lock kicks in */
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -48,6 +49,7 @@ export class AuthService {
     private readonly deviceService: DeviceService,
     private readonly emailService: EmailService,
     private readonly playbackGuard: PlaybackGuardService,
+    private readonly observabilityService: ObservabilityService,
     redisService: RedisService,
   ) {
     this.redis = redisService.getOrThrow();
@@ -103,6 +105,13 @@ export class AuthService {
       await this.redis.expire(rateLimitKey, REDIS_TTL.RATE_LIMIT);
 
       this.logger.warn(`Failed login attempt for ${dto.email} from IP ${ip}`);
+      await this.observabilityService.logEvent({
+        eventType: 'LOGIN_FAILED',
+        source: 'auth',
+        severity: 'warning',
+        message: `Failed login attempt for ${dto.email} from IP ${ip}`,
+        metadata: { email: dto.email, ip },
+      }).catch(() => {});
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -203,7 +212,15 @@ export class AuthService {
       }
     }
 
-    // ── Step 11: Return token + user info ─────────────────────
+    // ── Step 11: Log login event and return token + user info ──
+    await this.observabilityService.logEvent({
+      eventType: 'LOGIN_SUCCESS',
+      source: 'auth',
+      severity: 'info',
+      message: `User ${profile.email} logged in as ${profile.role}`,
+      metadata: { userId: profile.id, role: profile.role },
+    }).catch(() => {});
+
     return {
       token,
       user: {

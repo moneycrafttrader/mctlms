@@ -29,9 +29,11 @@ import * as crypto from 'crypto';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { BatchesService } from '../batches/batches.service';
 import { ZoomService } from '../zoom/zoom.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
 import { Transaction } from '../../common/utils/transaction.util';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateSessionDto } from './dto/create-session.dto';
 
 type JoinOutcome =
@@ -51,6 +53,7 @@ export class LiveSessionsService {
     private readonly supabaseService: SupabaseService,
     private readonly batchesService: BatchesService,
     private readonly zoomService: ZoomService,
+    private readonly observabilityService: ObservabilityService,
     redisService: RedisService,
   ) {
     try {
@@ -235,6 +238,15 @@ export class LiveSessionsService {
         .from(TABLES.SESSION_REGISTRANTS)
         .insert(registrantRecords);
     }
+
+    logEntityEvent(
+      this.observabilityService,
+      'LIVE_SESSION_CREATED',
+      'live_session',
+      sessionId,
+      dto.teacherId,
+      { topic: dto.topic, batchIds: dto.batchIds, startTime: dto.startTime },
+    ).catch(() => {});
 
     return {
       ...session,
@@ -809,6 +821,17 @@ export class LiveSessionsService {
     if (error || !data) {
       this.logger.error(`Failed to update session status ${id}: ${error?.message}`);
       throw new BadRequestException('Failed to update session status');
+    }
+
+    if (status === 'cancelled') {
+      logEntityEvent(
+        this.observabilityService,
+        'LIVE_SESSION_CANCELLED',
+        'live_session',
+        id,
+        'system',
+        { previousStatus: data.status ?? 'unknown', topic: data.topic ?? 'unknown' },
+      ).catch(() => {});
     }
 
     return data;

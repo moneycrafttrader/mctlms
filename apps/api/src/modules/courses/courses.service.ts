@@ -7,7 +7,9 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 
@@ -15,7 +17,10 @@ import { UpdateCourseDto } from './dto/update-course.dto';
 export class CoursesService {
   private readonly logger = new Logger(CoursesService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly observabilityService: ObservabilityService,
+  ) {}
 
   async create(dto: CreateCourseDto) {
     if (dto.startDate && dto.endDate && dto.endDate < dto.startDate) {
@@ -37,6 +42,14 @@ export class CoursesService {
       this.logger.error(`Failed to create course: ${error.message}`);
       throw new InternalServerErrorException(`Could not create course: ${error.message}`);
     }
+    logEntityEvent(
+      this.observabilityService,
+      'COURSE_CREATED',
+      'course',
+      data.id,
+      'system',
+      { name: dto.name },
+    ).catch(() => {});
     return data;
   }
 
@@ -135,6 +148,14 @@ export class CoursesService {
       this.logger.error(`Failed to update course ${id}: ${error.message}`);
       throw new InternalServerErrorException(`Could not update course: ${error.message}`);
     }
+    logEntityEvent(
+      this.observabilityService,
+      'COURSE_UPDATED',
+      'course',
+      id,
+      'system',
+      { name: dto.name ?? 'unknown', changes: Object.keys(updates).join(',') },
+    ).catch(() => {});
     return data;
   }
 

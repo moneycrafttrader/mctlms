@@ -3,9 +3,10 @@ import { RecordingsController } from './recordings.controller';
 import { RecordingsService } from './recordings.service';
 import { MuxModule } from '../mux/mux.module';
 import { PlaybackModule } from '../playback/playback.module';
+import { ObservabilityModule } from '../observability/observability.module';
 
 @Module({
-  imports: [MuxModule, PlaybackModule],
+  imports: [MuxModule, PlaybackModule, ObservabilityModule],
   controllers: [RecordingsController],
   providers: [RecordingsService],
   exports: [RecordingsService],

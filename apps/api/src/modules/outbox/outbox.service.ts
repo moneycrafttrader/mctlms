@@ -1,14 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { SupabaseService } from '../../common/services/supabase.service';
-import { TABLES } from '../../common/constants/tables.constant';
 
 export const OUTBOX_TABLE = 'outbox_messages';
 
 @Injectable()
 export class OutboxService {
   private readonly logger = new Logger(OutboxService.name);
+  private isProcessing = false;
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    @Inject(forwardRef(() => 'InvoicesService'))
+    private readonly invoicesService: any,
+  ) {}
 
   async enqueue(messageType: 'receipt' | 'invoice', payload: Record<string, any>): Promise<void> {
     const { error } = await this.supabaseService.client
@@ -26,47 +31,53 @@ export class OutboxService {
     }
   }
 
-  async processPending(batchSize = 10): Promise<number> {
-    const { data: messages, error } = await this.supabaseService.client
-      .from(OUTBOX_TABLE)
-      .select('*')
-      .eq('status', 'pending')
-      .lte('retry_count', 'max_retries')
-      .order('created_at', { ascending: true })
-      .limit(batchSize);
-
-    if (error || !messages?.length) return 0;
-
-    let processed = 0;
-    for (const msg of messages as any[]) {
-      await this.markProcessing(msg.id);
-
-      try {
-        if (msg.message_type === 'receipt') {
-          const { InvoicesService } = await import('../invoices/invoices.service');
-          const invoicesService = new (InvoicesService as any)(
-            this.supabaseService,
-            null as any,
-          );
-          await invoicesService.createAndSendReceipt(msg.payload.paymentId);
-        } else if (msg.message_type === 'invoice') {
-          const { InvoicesService } = await import('../invoices/invoices.service');
-          const invoicesService = new (InvoicesService as any)(
-            this.supabaseService,
-            null as any,
-          );
-          await invoicesService.createAndSendInvoice(msg.payload.paymentId);
-        }
-
-        await this.markCompleted(msg.id);
-        processed++;
-      } catch (err: any) {
-        this.logger.error(`Outbox message ${msg.id} failed: ${err.message}`);
-        await this.markFailed(msg.id, err.message);
-      }
+  @Cron('*/30 * * * * *')
+  async scheduledProcess(): Promise<void> {
+    if (this.isProcessing) return;
+    try {
+      await this.processPending(10);
+    } catch (err: any) {
+      this.logger.error(`Outbox scheduled processing error: ${err.message}`);
     }
+  }
 
-    return processed;
+  async processPending(batchSize = 10): Promise<number> {
+    if (this.isProcessing) return 0;
+    this.isProcessing = true;
+
+    try {
+      const { data: messages, error } = await this.supabaseService.client
+        .from(OUTBOX_TABLE)
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(batchSize);
+
+      if (error || !messages?.length) return 0;
+
+      let processed = 0;
+      for (const msg of messages as any[]) {
+        await this.markProcessing(msg.id);
+
+        try {
+          if (msg.message_type === 'receipt') {
+            await this.invoicesService.createAndSendReceipt(msg.payload.paymentId);
+          } else if (msg.message_type === 'invoice') {
+            await this.invoicesService.createAndSendInvoice(msg.payload.paymentId);
+          }
+
+          await this.markCompleted(msg.id);
+          processed++;
+        } catch (err: any) {
+          this.logger.error(`Outbox message ${msg.id} failed: ${err.message}`);
+          await this.markFailed(msg.id, err.message);
+        }
+      }
+
+      return processed;
+    } finally {
+      this.isProcessing = false;
+    }
   }
 
   private async markProcessing(id: string): Promise<void> {
@@ -98,7 +109,7 @@ export class OutboxService {
     await this.supabaseService.client
       .from(OUTBOX_TABLE)
       .update({
-        status: retryCount >= 3 ? 'failed' : 'pending',
+        status: retryCount > 3 ? 'failed' : 'pending',
         retry_count: retryCount,
         last_error: error,
       })

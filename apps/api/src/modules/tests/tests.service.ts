@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 
@@ -18,7 +20,10 @@ const TEST_SELECT = `
 export class TestsService {
   private readonly logger = new Logger(TestsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly observabilityService: ObservabilityService,
+  ) {}
 
   async create(dto: CreateTestDto, createdBy: string) {
     const { sections, questions, batches, ...testData } = dto;
@@ -47,7 +52,16 @@ export class TestsService {
       .single();
 
     if (error) throw error;
-    return this.insertRelations(test.id, sections, questions, batches);
+    const result = await this.insertRelations(test.id, sections, questions, batches);
+    logEntityEvent(
+      this.observabilityService,
+      'TEST_CREATED',
+      'test',
+      test.id,
+      createdBy,
+      { title: testData.title },
+    ).catch(() => {});
+    return result;
   }
 
   async duplicate(id: string, createdBy: string) {
@@ -245,7 +259,18 @@ export class TestsService {
       .eq('id', id);
 
     if (error) throw error;
-    return this.findOne(id);
+    const result = await this.findOne(id);
+    if (['published', 'scheduled', 'active'].includes(status)) {
+      logEntityEvent(
+        this.observabilityService,
+        'TEST_PUBLISHED',
+        'test',
+        id,
+        'system',
+        { status },
+      ).catch(() => {});
+    }
+    return result;
   }
 
   async archive(id: string) {
@@ -301,7 +326,7 @@ export class TestsService {
     const { data, count, error } = await query;
 
     if (error) {
-      this.logger.error(`Failed to fetch student tests: ${error.message}`);
+      this.logger.error(`Failed to fetch student tests: ${(error as any).message}`);
       throw error;
     }
 

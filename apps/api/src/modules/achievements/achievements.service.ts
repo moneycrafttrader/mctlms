@@ -2,10 +2,12 @@ import { Injectable, Logger, InternalServerErrorException, NotFoundException } f
 import * as path from 'path';
 import * as fs from 'fs';
 import * as Handlebars from 'handlebars';
-import * as puppeteer from 'puppeteer';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { EmailService } from '../email/email.service';
+import { PdfGenerationService } from '../pdf/pdf-generation.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 
 @Injectable()
 export class AchievementsService {
@@ -14,6 +16,8 @@ export class AchievementsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly emailService: EmailService,
+    private readonly pdfService: PdfGenerationService,
+    private readonly observabilityService: ObservabilityService,
   ) {}
 
   async getMyAchievements(userId: string) {
@@ -88,7 +92,17 @@ export class AchievementsService {
           .from(TABLES.STUDENT_ACHIEVEMENTS)
           .insert({ user_id: userId, achievement_id: ach.id, batch_id: batchId });
 
-        if (!error) awarded.push((ach as any).key);
+        if (!error) {
+          awarded.push((ach as any).key);
+          logEntityEvent(
+            this.observabilityService,
+            'ACHIEVEMENT_AWARDED',
+            'achievement',
+            ach.id,
+            userId,
+            { achievementKey: (ach as any).key, batchId },
+          ).catch(() => {});
+        }
       }
     }
 
@@ -142,6 +156,15 @@ export class AchievementsService {
     await this.checkAndAward(userId, batchId ?? '').catch((err) => {
       this.logger.warn(`Achievement check failed after certificate issuance: ${err.message}`);
     });
+
+    logEntityEvent(
+      this.observabilityService,
+      'CERTIFICATE_ISSUED',
+      'certificate',
+      data.id,
+      userId,
+      { courseId, batchId, certificateNumber: data.certificate_number },
+    ).catch(() => {});
 
     return data;
   }
@@ -266,19 +289,8 @@ export class AchievementsService {
       verifyUrl: `${this.getFrontendUrl()}/verify-certificate?token=${c.id}`,
     });
 
-    let browser;
     try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'domcontentloaded' });
-      const pdfBuffer = Buffer.from(await page.pdf({
-        format: 'A4',
-        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
-        printBackground: true,
-      }));
+      const pdfBuffer = await this.pdfService.generatePdf(html);
 
       const pdfPath = `certificates/${certificateId}.pdf`;
       await this.supabaseService.client
@@ -310,10 +322,6 @@ export class AchievementsService {
         .eq('id', certificateId);
     } catch (err: any) {
       this.logger.error(`Certificate PDF generation failed: ${err.message}`);
-    } finally {
-      if (browser) {
-        await browser.close();
-      }
     }
   }
 

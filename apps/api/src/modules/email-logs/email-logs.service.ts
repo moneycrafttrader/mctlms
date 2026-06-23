@@ -218,14 +218,19 @@ export class EmailLogsService {
   }
 
   async getEmailStats() {
-    const [totalResult, sentResult, failedResult, retiredResult, pendingResult] =
-      await Promise.all([
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'sent'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'failed'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'retrying'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      ]);
+    const results = await Promise.allSettled([
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'sent'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'failed'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'retrying'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    ]);
+
+    const total = results[0].status === 'fulfilled' ? (results[0].value as any).count ?? 0 : 0;
+    const sent = results[1].status === 'fulfilled' ? (results[1].value as any).count ?? 0 : 0;
+    const failed = results[2].status === 'fulfilled' ? (results[2].value as any).count ?? 0 : 0;
+    const retrying = results[3].status === 'fulfilled' ? (results[3].value as any).count ?? 0 : 0;
+    const pending = results[4].status === 'fulfilled' ? (results[4].value as any).count ?? 0 : 0;
 
     const templatesResult = await this.supabaseService.client
       .from(TABLES.EMAIL_LOGS)
@@ -238,11 +243,11 @@ export class EmailLogsService {
     }
 
     return {
-      total: (totalResult as any).count ?? 0,
-      sent: (sentResult as any).count ?? 0,
-      failed: (failedResult as any).count ?? 0,
-      retrying: (retiredResult as any).count ?? 0,
-      pending: (pendingResult as any).count ?? 0,
+      total: total,
+      sent: sent,
+      failed: failed,
+      retrying: retrying,
+      pending: pending,
       templateCounts: Object.fromEntries(templateCountsMap),
     };
   }
@@ -250,28 +255,29 @@ export class EmailLogsService {
   async getAnalytics() {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [totalResult, sentResult, failedResult, dailyResult, templatesResult] =
-      await Promise.all([
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'sent'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'failed'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('sent_at').gte('sent_at', sevenDaysAgo).not('sent_at', 'is', null).order('sent_at', { ascending: true }),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('template_name').not('template_name', 'is', null),
-      ]);
+    const results = await Promise.allSettled([
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'sent'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'failed'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('sent_at').gte('sent_at', sevenDaysAgo).not('sent_at', 'is', null).order('sent_at', { ascending: true }),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('template_name').not('template_name', 'is', null),
+    ]);
 
-    const total = (totalResult as any).count ?? 0;
-    const sent = (sentResult as any).count ?? 0;
-    const failed = (failedResult as any).count ?? 0;
+    const total = results[0].status === 'fulfilled' ? (results[0].value as any).count ?? 0 : 0;
+    const sent = results[1].status === 'fulfilled' ? (results[1].value as any).count ?? 0 : 0;
+    const failed = results[2].status === 'fulfilled' ? (results[2].value as any).count ?? 0 : 0;
+    const dailyResult = results[3].status === 'fulfilled' ? results[3].value : null;
+    const templatesResult = results[4].status === 'fulfilled' ? results[4].value : null;
 
     const dailyMap = new Map<string, number>();
-    for (const row of (dailyResult.data ?? [])) {
+    for (const row of ((dailyResult as any)?.data ?? [])) {
       const date = ((row as any).sent_at as string).slice(0, 10);
       dailyMap.set(date, (dailyMap.get(date) ?? 0) + 1);
     }
     const emailsPerDay = Array.from(dailyMap.entries()).map(([date, count]) => ({ date, count }));
 
     const templateCountsMap = new Map<string, number>();
-    for (const row of (templatesResult.data ?? [])) {
+    for (const row of ((templatesResult as any)?.data ?? [])) {
       const name = (row as any).template_name ?? 'unknown';
       templateCountsMap.set(name, (templateCountsMap.get(name) ?? 0) + 1);
     }
@@ -292,21 +298,20 @@ export class EmailLogsService {
   }
 
   async getQueueStats() {
-    const [totalResult, pendingResult, retryingResult, failedResult, processingResult] =
-      await Promise.all([
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'retrying'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'failed'),
-        this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).in('status', ['pending', 'retrying']),
-      ]);
+    const results = await Promise.allSettled([
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'retrying'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).eq('status', 'failed'),
+      this.supabaseService.client.from(TABLES.EMAIL_LOGS).select('id', { count: 'exact', head: true }).in('status', ['pending', 'retrying']),
+    ]);
 
     return {
-      total: (totalResult as any).count ?? 0,
-      pending: (pendingResult as any).count ?? 0,
-      retrying: (retryingResult as any).count ?? 0,
-      failed: (failedResult as any).count ?? 0,
-      inQueue: (processingResult as any).count ?? 0,
+      total: results[0].status === 'fulfilled' ? (results[0].value as any).count ?? 0 : 0,
+      pending: results[1].status === 'fulfilled' ? (results[1].value as any).count ?? 0 : 0,
+      retrying: results[2].status === 'fulfilled' ? (results[2].value as any).count ?? 0 : 0,
+      failed: results[3].status === 'fulfilled' ? (results[3].value as any).count ?? 0 : 0,
+      inQueue: results[4].status === 'fulfilled' ? (results[4].value as any).count ?? 0 : 0,
     };
   }
 

@@ -9,11 +9,14 @@ import {
 import { DeviceService } from './device.service';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '@lms/shared-types';
 
 @Controller('devices')
 export class DeviceController {
   constructor(private readonly deviceService: DeviceService) {}
 
+  @Roles(UserRole.STUDENT)
   @Get()
   async listDevices(
     @CurrentUser() user: { id: string },
@@ -22,6 +25,7 @@ export class DeviceController {
     return devices;
   }
 
+  @Roles(UserRole.STUDENT)
   @Patch(':id')
   async updateDevice(
     @Param('id') id: string,
@@ -31,6 +35,7 @@ export class DeviceController {
     return this.deviceService.updateDevice(id, user.id, dto);
   }
 
+  @Roles(UserRole.STUDENT)
   @Delete(':id')
   async deleteDevice(
     @Param('id') id: string,

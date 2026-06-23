@@ -1,337 +1,118 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Plus, BookOpen, Pencil, Trash2, Copy, Eye, ExternalLink } from 'lucide-react';
+import { Plus, BookOpen, Pencil, Trash2, Copy, Eye, ExternalLink, GraduationCap, Calendar, Users } from 'lucide-react';
 import Link from 'next/link';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { AdminPageHeader } from '@/components/shared/AdminPageHeader';
+import { AdminSection } from '@/components/shared/AdminSection';
+import { AdminStatCard } from '@/components/shared/AdminStatCard';
 import { CourseForm } from './course-form';
 import { BatchForm } from './batch-form';
 import {
-  type Course,
-  type Batch,
-  getCourses,
-  deleteBatch,
-  deleteCourse,
-  duplicateCourse,
-  activateCourse,
-  updateCourse,
+  type Course, type Batch, getCourses, deleteBatch, deleteCourse,
+  duplicateCourse, activateCourse, updateCourse,
 } from '@/lib/api/courses';
 
-interface CourseListProps {
-  initialCourses: Course[];
-}
+interface CourseListProps { initialCourses: Course[]; }
 
 export function CourseList({ initialCourses }: CourseListProps) {
   const [courses, setCourses] = useState<Course[]>(initialCourses);
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
-
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [deletingBatch, setDeletingBatch] = useState<Batch | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [activatingCourse, setActivatingCourse] = useState<Course | null>(null);
 
-  const revalidateServerCache = useCallback(async () => {
-    try {
-      await fetch('/api/revalidate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: '/admin/courses' }),
-      });
-    } catch {
-      // Revalidation is best-effort — the cache TTL will eventually expire
-    }
+  const totalBatches = courses.reduce((s, c) => s + (c.batchCount ?? c.batches?.length ?? 0), 0);
+  const activeCourses = courses.filter(c => c.is_active).length;
+  const inactiveCourses = courses.filter(c => !c.is_active).length;
+
+  const refresh = useCallback(async () => {
+    try { const r = await getCourses(); setCourses(r.items); } catch { /* silent */ }
+    try { await fetch('/api/revalidate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: '/admin/courses' }) }); } catch { /* best-effort */ }
   }, []);
 
-  const refreshCourses = useCallback(async () => {
-    try {
-      const result = await getCourses();
-      setCourses(result.items);
-      revalidateServerCache();
-    } catch {
-      // silently fail — data stays as last-known state
-    }
-  }, [revalidateServerCache]);
-
-  const openBatchModal = (courseId: string) => {
-    setSelectedCourseId(courseId);
-    setShowBatchModal(true);
-  };
-
-  const openEditBatch = (batch: Batch) => {
-    setEditingBatch(batch);
-  };
-
-  const confirmDeleteBatch = async () => {
-    if (!deletingBatch) return;
-    try {
-      await deleteBatch(deletingBatch.id);
-      setDeletingBatch(null);
-      refreshCourses();
-    } catch {
-      // silently fail
-    }
-  };
-
-  const confirmDeleteCourse = async () => {
-    if (!deletingCourse) return;
-    try {
-      await deleteCourse(deletingCourse.id);
-      setDeletingCourse(null);
-      refreshCourses();
-    } catch {
-      // silently fail
-    }
-  };
-
-  const confirmDuplicateCourse = async (course: Course) => {
-    try {
-      await duplicateCourse(course.id);
-      refreshCourses();
-    } catch {
-      // silently fail
-    }
-  };
-
-  const confirmActivateCourse = async () => {
-    if (!activatingCourse) return;
-    try {
-      await activateCourse(activatingCourse.id);
-      setActivatingCourse(null);
-      refreshCourses();
-    } catch {
-      // silently fail
-    }
-  };
+  const confirmDeleteBatch = async () => { if (!deletingBatch) return; try { await deleteBatch(deletingBatch.id); setDeletingBatch(null); refresh(); } catch { /* silent */ } };
+  const confirmDeleteCourse = async () => { if (!deletingCourse) return; try { await deleteCourse(deletingCourse.id); setDeletingCourse(null); refresh(); } catch { /* silent */ } };
+  const confirmActivate = async () => { if (!activatingCourse) return; try { await activateCourse(activatingCourse.id); setActivatingCourse(null); refresh(); } catch { /* silent */ } };
 
   return (
-    <>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Courses &amp; Batches</h1>
-        <button
-          onClick={() => setShowCourseModal(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          <Plus className="h-4 w-4" />
-          Create Course
+    <div className="space-y-6">
+      <AdminPageHeader title="Courses & Batches" description="Manage your educational offerings" actions={
+        <button onClick={() => setShowCourseModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors">
+          <Plus className="h-4 w-4" /> Create Course
         </button>
-      </div>
+      } />
+
+      <AdminSection title="Overview">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <AdminStatCard label="Total Courses" value={courses.length} icon={BookOpen} iconColor="bg-brand-50 text-brand-600" />
+          <AdminStatCard label="Active" value={activeCourses} icon={GraduationCap} iconColor="bg-emerald-50 text-emerald-600" />
+          <AdminStatCard label="Total Batches" value={totalBatches} icon={Users} iconColor="bg-blue-50 text-blue-600" />
+        </div>
+      </AdminSection>
 
       {courses.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 py-16 text-gray-500">
-          <BookOpen className="mb-3 h-10 w-10 text-gray-300" />
-          <p className="text-lg font-medium">No courses yet</p>
-          <p className="text-sm">Create your first course to get started.</p>
+        <div className="rounded-xl border-2 border-dashed border-surface-border py-20 text-center">
+          <BookOpen className="mx-auto h-10 w-10 text-text-muted" />
+          <p className="mt-3 text-sm font-semibold text-text-primary">No courses yet</p>
+          <p className="mt-1 text-sm text-text-muted">Create your first course to get started.</p>
+          <button onClick={() => setShowCourseModal(true)} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">+ Create Course</button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {courses.map((course) => (
-            <div
-              key={course.id}
-              className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md"
-            >
+            <div key={course.id} className="rounded-xl border border-surface-border bg-surface-card p-6 shadow-sm transition-shadow hover:shadow-md">
               <div className="mb-3 flex items-start justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">{course.name}</h3>
-                <span className="flex items-center gap-1">
-                  <button
-                    onClick={() => setEditingCourse(course)}
-                    className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-                    title="Edit course"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => confirmDuplicateCourse(course)}
-                    className="rounded p-1 text-gray-400 hover:bg-blue-100 hover:text-blue-600"
-                    title="Duplicate course"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </button>
-                  {course.is_active ? (
-                    <button
-                      onClick={() => setDeletingCourse(course)}
-                      className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600"
-                      title="Archive course"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setActivatingCourse(course)}
-                      className="rounded p-1 text-gray-400 hover:bg-green-100 hover:text-green-600"
-                      title="Activate course"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      course.is_active
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}
-                  >
-                    {course.is_active ? 'Active' : 'Inactive'}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <Link href={`/admin/courses/${course.id}`} className="text-lg font-semibold text-text-primary hover:text-brand-600 hover:underline">{course.name}</Link>
+                  {course.description && <p className="mt-1 text-sm text-text-muted line-clamp-2">{course.description}</p>}
+                </div>
+                <span className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => setEditingCourse(course)} className="rounded p-1 text-text-muted hover:bg-surface-muted hover:text-text-secondary" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => { duplicateCourse(course.id); refresh(); }} className="rounded p-1 text-text-muted hover:bg-blue-50 hover:text-blue-600" title="Duplicate"><Copy className="h-3.5 w-3.5" /></button>
+                  {course.is_active
+                    ? <button onClick={() => setDeletingCourse(course)} className="rounded p-1 text-text-muted hover:bg-red-50 hover:text-red-600" title="Archive"><Trash2 className="h-3.5 w-3.5" /></button>
+                    : <button onClick={() => setActivatingCourse(course)} className="rounded p-1 text-text-muted hover:bg-emerald-50 hover:text-emerald-600" title="Activate"><Eye className="h-3.5 w-3.5" /></button>
+                  }
+                  <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${course.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>{course.is_active ? 'Active' : 'Inactive'}</span>
                 </span>
               </div>
-
-              {course.description && (
-                <p className="mb-4 text-sm text-gray-500 line-clamp-2">
-                  {course.description}
-                </p>
-              )}
-
-              {/* Batch list */}
               {course.batches && course.batches.length > 0 && (
                 <ul className="mb-4 space-y-1.5">
                   {course.batches.map((batch) => (
-                    <li
-                      key={batch.id}
-                      className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm"
-                    >
-                      <Link
-                        href={`/admin/batches/${batch.id}`}
-                        className="flex items-center gap-2 text-gray-700 hover:text-brand-600 flex-1"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
-                        {batch.name}
-                        <ExternalLink className="h-3 w-3 text-gray-400" />
+                    <li key={batch.id} className="flex items-center justify-between rounded-lg bg-surface-muted px-3 py-2 text-sm">
+                      <Link href={`/admin/batches/${batch.id}`} className="flex items-center gap-2 text-text-secondary hover:text-brand-600 flex-1 min-w-0">
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-500 shrink-0" />
+                        <span className="truncate">{batch.name}</span>
+                        <ExternalLink className="h-3 w-3 text-text-muted shrink-0" />
                       </Link>
-                      <span className="flex items-center gap-1">
-                        <button
-                          onClick={() => openEditBatch(batch)}
-                          className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-                          title="Edit batch"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setDeletingBatch(batch)}
-                          className="rounded p-1 text-gray-400 hover:bg-red-100 hover:text-red-600"
-                          title="Delete batch"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => setEditingBatch(batch)} className="rounded p-1 text-text-muted hover:bg-surface-border hover:text-text-secondary"><Pencil className="h-3 w-3" /></button>
+                        <button onClick={() => setDeletingBatch(batch)} className="rounded p-1 text-text-muted hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
-
-              <button
-                onClick={() => openBatchModal(course.id)}
-                className="w-full rounded-lg border border-brand-600 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50"
-              >
-                + Add Batch
-              </button>
+              <button onClick={() => { setSelectedCourseId(course.id); setShowBatchModal(true); }} className="w-full rounded-lg border border-brand-600 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50 transition-colors">+ Add Batch</button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Create Course Modal */}
-      <Modal
-        isOpen={showCourseModal}
-        onClose={() => setShowCourseModal(false)}
-        title="Create Course"
-      >
-        <CourseForm
-          onSuccess={() => {
-            setShowCourseModal(false);
-            refreshCourses();
-          }}
-        />
-      </Modal>
-
-      {/* Edit Course Modal */}
-      <Modal
-        isOpen={!!editingCourse}
-        onClose={() => setEditingCourse(null)}
-        title="Edit Course"
-      >
-        {editingCourse && (
-          <CourseForm
-            initialData={editingCourse}
-            onSuccess={() => {
-              setEditingCourse(null);
-              refreshCourses();
-            }}
-          />
-        )}
-      </Modal>
-
-      {/* Create Batch Modal */}
-      <Modal
-        isOpen={showBatchModal}
-        onClose={() => {
-          setShowBatchModal(false);
-          setSelectedCourseId(null);
-        }}
-        title="Add Batch"
-      >
-        {selectedCourseId && (
-          <BatchForm
-            courseId={selectedCourseId}
-            onSuccess={() => {
-              setShowBatchModal(false);
-              setSelectedCourseId(null);
-              refreshCourses();
-            }}
-          />
-        )}
-      </Modal>
-
-      {/* Edit Batch Modal */}
-      <Modal
-        isOpen={!!editingBatch}
-        onClose={() => setEditingBatch(null)}
-        title="Edit Batch"
-      >
-        {editingBatch && (
-          <BatchForm
-            courseId={editingBatch.course_id}
-            batch={editingBatch}
-            onSuccess={() => {
-              setEditingBatch(null);
-              refreshCourses();
-            }}
-          />
-        )}
-      </Modal>
-
-      {/* Delete Batch Confirmation */}
-      <ConfirmDialog
-        isOpen={!!deletingBatch}
-        title="Delete Batch"
-        message={`Are you sure you want to delete "${deletingBatch?.name}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        onConfirm={confirmDeleteBatch}
-        onCancel={() => setDeletingBatch(null)}
-      />
-
-      {/* Delete Course Confirmation */}
-      <ConfirmDialog
-        isOpen={!!deletingCourse}
-        title="Archive Course"
-        message={`Are you sure you want to archive "${deletingCourse?.name}"? It will be hidden from the dashboard.`}
-        confirmLabel="Archive"
-        onConfirm={confirmDeleteCourse}
-        onCancel={() => setDeletingCourse(null)}
-      />
-
-      {/* Activate Course Confirmation */}
-      <ConfirmDialog
-        isOpen={!!activatingCourse}
-        title="Activate Course"
-        message={`Are you sure you want to reactivate "${activatingCourse?.name}"? It will be visible on the dashboard again.`}
-        confirmLabel="Activate"
-        onConfirm={confirmActivateCourse}
-        onCancel={() => setActivatingCourse(null)}
-      />
-    </>
+      <Modal isOpen={showCourseModal} onClose={() => setShowCourseModal(false)} title="Create Course"><CourseForm onSuccess={() => { setShowCourseModal(false); refresh(); }} /></Modal>
+      <Modal isOpen={!!editingCourse} onClose={() => setEditingCourse(null)} title="Edit Course">{editingCourse && <CourseForm initialData={editingCourse} onSuccess={() => { setEditingCourse(null); refresh(); }} />}</Modal>
+      <Modal isOpen={showBatchModal} onClose={() => { setShowBatchModal(false); setSelectedCourseId(null); }} title="Add Batch">{selectedCourseId && <BatchForm courseId={selectedCourseId} onSuccess={() => { setShowBatchModal(false); setSelectedCourseId(null); refresh(); }} />}</Modal>
+      <Modal isOpen={!!editingBatch} onClose={() => setEditingBatch(null)} title="Edit Batch">{editingBatch && <BatchForm courseId={editingBatch.course_id} batch={editingBatch} onSuccess={() => { setEditingBatch(null); refresh(); }} />}</Modal>
+      <ConfirmDialog isOpen={!!deletingBatch} title="Delete Batch" message={`Delete "${deletingBatch?.name}"?`} confirmLabel="Delete" onConfirm={confirmDeleteBatch} onCancel={() => setDeletingBatch(null)} />
+      <ConfirmDialog isOpen={!!deletingCourse} title="Archive Course" message={`Archive "${deletingCourse?.name}"?`} confirmLabel="Archive" onConfirm={confirmDeleteCourse} onCancel={() => setDeletingCourse(null)} />
+      <ConfirmDialog isOpen={!!activatingCourse} title="Activate Course" message={`Activate "${activatingCourse?.name}"?`} confirmLabel="Activate" onConfirm={confirmActivate} onCancel={() => setActivatingCourse(null)} />
+    </div>
   );
 }

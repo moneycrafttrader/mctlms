@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, Plus, Loader2, ExternalLink, Trash2 } from 'lucide-react';
+import { Calendar, Plus, Loader2, ExternalLink, Trash2, BarChart3, Clock, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleSessionModal } from '@/components/admin/sessions/schedule-session-modal';
 import {
@@ -9,6 +9,9 @@ import {
   deleteSession,
   type ScheduledSession,
 } from '@/lib/api/sessions';
+import { AdminPageHeader } from '@/components/shared/AdminPageHeader';
+import { AdminSection } from '@/components/shared/AdminSection';
+import { AdminStatCard } from '@/components/shared/AdminStatCard';
 
 export default function AdminSessionsPage() {
   const [sessions, setSessions] = useState<ScheduledSession[]>([]);
@@ -61,23 +64,18 @@ export default function AdminSessionsPage() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Live Trading Sessions</h1>
-          <p className="text-sm text-gray-500">
-            Schedule and manage Zoom webinars for your batches
-          </p>
+    <div className="space-y-6">
+      <AdminPageHeader title="Live Trading Sessions" description="Schedule and manage Zoom webinars for your batches" actions={
+        <button onClick={() => setShowScheduleModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors"><Plus className="h-4 w-4" /> Schedule New Class</button>
+      } />
+
+      <AdminSection title="Overview">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <AdminStatCard label="Total Sessions" value={sessions.length} icon={Calendar} iconColor="bg-brand-50 text-brand-600" />
+          <AdminStatCard label="Upcoming" value={upcoming.length} icon={Clock} iconColor="bg-blue-50 text-blue-600" />
+          <AdminStatCard label="Past" value={past.length} icon={Video} iconColor="bg-emerald-50 text-emerald-600" />
         </div>
-        <button
-          onClick={() => setShowScheduleModal(true)}
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          <Plus className="h-4 w-4" />
-          Schedule New Class
-        </button>
-      </div>
+      </AdminSection>
 
       {/* Loading */}
       {loading ? (

@@ -190,6 +190,7 @@ export class VideosController {
    * Fetch all ready videos assigned to a specific batch.
    * Used by the student course classroom page.
    */
+  @Roles(UserRole.STUDENT, UserRole.TEACHER, UserRole.ADMIN)
   @Get('batch/:batchId')
   getBatchVideos(@Param('batchId') batchId: string) {
     return this.videosService.getBatchVideos(batchId);
@@ -203,6 +204,7 @@ export class VideosController {
    * Get all videos the logged-in student can watch, grouped by topic.
    * Students only see videos their batch has access to.
    */
+  @Roles(UserRole.STUDENT)
   @Get('my')
   getMyVideos(
     @CurrentUser() user: { id: string },
@@ -218,6 +220,7 @@ export class VideosController {
    * This is the security checkpoint — verifies batch access before returning a
    * time-limited URL (expires in 4 hours).
    */
+  @Roles(UserRole.STUDENT)
   @Post(':id/authorize')
   authorizePlayback(
     @Param('id') id: string,
@@ -229,6 +232,7 @@ export class VideosController {
     return this.videosService.authorizePlayback(id, user.id, deviceId, ip);
   }
 
+  @Roles(UserRole.STUDENT)
   @Get(':id/play')
   getPlaybackUrl(
     @Param('id') id: string,
@@ -247,6 +251,7 @@ export class VideosController {
    * Update watch progress for the current video.
    * Called by the video player every ~30 seconds to save position for resume.
    */
+  @Roles(UserRole.STUDENT)
   @Post(':id/progress')
   updateProgress(
     @Param('id') id: string,

@@ -49,13 +49,9 @@ export class ResultsService {
       throw new NotFoundException('Result not found');
     }
 
-    // Fetch answers separately (no direct FK between test_results and test_answers)
-    const { data: answers } = await this.supabaseService.client
-      .from(TABLES.TEST_ANSWERS)
-      .select('*')
-      .eq('attempt_id', attemptId);
+    const showResults = (result as any).test?.show_result_immediately !== false;
 
-    return {
+    const base = {
       obtained_marks: result.obtained_marks,
       total_marks: result.total_marks,
       percentage: result.percentage,
@@ -68,7 +64,33 @@ export class ResultsService {
       passed: result.passed,
       duration_seconds: result.duration_seconds,
       published_at: result.published_at,
-      answers: answers ?? [],
+    };
+
+    if (!showResults) {
+      return base;
+    }
+
+    // Fetch answers separately (no direct FK between test_results and test_answers)
+    const { data: answers } = await this.supabaseService.client
+      .from(TABLES.TEST_ANSWERS)
+      .select('*')
+      .eq('attempt_id', attemptId);
+
+    const sanitizedAnswers = (answers ?? []).map((a: any) => ({
+      id: a.id,
+      question_id: a.question_id,
+      question_type: a.question_type,
+      answer: a.answer,
+      marks_possible: a.marks_possible ?? null,
+      marks_awarded: showResults ? (a.marks_awarded ?? null) : null,
+      is_correct: showResults ? (a.is_correct ?? null) : null,
+      is_manual_review: a.is_manual_review ?? null,
+      sort_order: a.sort_order,
+    }));
+
+    return {
+      ...base,
+      answers: sanitizedAnswers,
     };
   }
 
@@ -213,10 +235,13 @@ export class ResultsService {
       const topicAnalysis = r.topic_analysis;
       if (Array.isArray(topicAnalysis)) {
         for (const topic of topicAnalysis) {
-          const existing = topicMap.get(topic.name) ?? { total: 0, correct: 0 };
-          existing.total += topic.total_questions ?? 0;
-          existing.correct += topic.correct_answers ?? 0;
-          topicMap.set(topic.name, existing);
+          const name = topic.name ?? topic.topicId ?? topic.topic ?? String(topic.topic_id ?? 'unknown');
+          const total = topic.total_questions ?? topic.total ?? topic.totalQuestions ?? 0;
+          const correct = topic.correct_answers ?? topic.correct ?? topic.correctAnswers ?? 0;
+          const existing = topicMap.get(name) ?? { total: 0, correct: 0 };
+          existing.total += total;
+          existing.correct += correct;
+          topicMap.set(name, existing);
         }
       }
     }

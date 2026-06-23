@@ -16,9 +16,10 @@ import { LiveSessionsController } from './live-sessions.controller';
 import { LiveSessionsService } from './live-sessions.service';
 import { BatchesModule } from '../batches/batches.module';
 import { ZoomModule } from '../zoom/zoom.module';
+import { ObservabilityModule } from '../observability/observability.module';
 
 @Module({
-  imports: [BatchesModule, ZoomModule],
+  imports: [BatchesModule, ZoomModule, ObservabilityModule],
   controllers: [LiveSessionsController],
   providers: [LiveSessionsService],
   exports: [LiveSessionsService],

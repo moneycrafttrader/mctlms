@@ -2,31 +2,18 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  Plus,
-  Search,
-  Filter,
-  ChevronLeft,
-  ChevronRight,
-  HelpCircle,
-  Upload,
-  X,
-  Save,
-  Loader2,
-  Trash2,
-  Archive,
-  RefreshCw,
-  AlertTriangle,
+  Plus, Search, Filter, ChevronLeft, ChevronRight, HelpCircle,
+  Upload, X, Save, Loader2, Trash2, Archive, RefreshCw, AlertTriangle,
+  BookOpen, BarChart3,
 } from 'lucide-react';
 import {
-  getQuestions,
-  createQuestion,
-  bulkImportQuestions,
-  archiveQuestion,
-  unarchiveQuestion,
-  deleteQuestion,
-  getTopics,
+  getQuestions, createQuestion, bulkImportQuestions,
+  archiveQuestion, unarchiveQuestion, deleteQuestion, getTopics,
 } from '@/lib/api/assessments';
 import { cn } from '@/lib/utils';
+import { AdminPageHeader } from '@/components/shared/AdminPageHeader';
+import { AdminSection } from '@/components/shared/AdminSection';
+import { AdminStatCard } from '@/components/shared/AdminStatCard';
 import type { QuestionResponse } from '@/lib/api/assessments';
 
 const difficultyColors: Record<string, string> = {
@@ -129,28 +116,20 @@ export default function AdminQuestionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Question Bank</h1>
-          <p className="mt-1 text-sm text-text-muted">Manage and organize test questions</p>
+      <AdminPageHeader title="Question Bank" description={`${total} question${total !== 1 ? 's' : ''} total — Manage and organize test questions`} actions={
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowBulkModal(true)} className="inline-flex items-center gap-2 rounded-xl border border-surface-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-surface-muted transition-colors"><Upload className="h-4 w-4" /> Bulk Import</button>
+          <button onClick={() => setShowAddModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors"><Plus className="h-4 w-4" /> Add Question</button>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowBulkModal(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-surface-border px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-surface-muted"
-          >
-            <Upload className="h-4 w-4" />
-            Bulk Import
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-navy-dark"
-          >
-            <Plus className="h-4 w-4" />
-            Add Question
-          </button>
+      } />
+
+      <AdminSection title="Overview">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <AdminStatCard label="Total Questions" value={total} icon={HelpCircle} iconColor="bg-brand-50 text-brand-600" />
+          <AdminStatCard label="Topics" value={topics.length} icon={BookOpen} iconColor="bg-emerald-50 text-emerald-600" />
+          <AdminStatCard label="Difficulty: Hard" value={questions.filter(q => q.difficulty === 'hard').length} icon={BarChart3} iconColor="bg-red-50 text-red-600" />
         </div>
-      </div>
+      </AdminSection>
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-xs">

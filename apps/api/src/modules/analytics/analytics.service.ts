@@ -31,48 +31,51 @@ export class AnalyticsService {
    *   4. Next 5 upcoming live sessions
    */
   async getAdminOverview() {
-    const [studentCount, revenueResult, courseResult, sessions] =
-      await Promise.all([
-        // 1. Student count
-        this.supabaseService.client
-          .from(TABLES.PROFILES)
-          .select('id', { count: 'exact', head: true })
-          .eq('role', 'student')
-          .eq('is_active', true),
+    const results = await Promise.allSettled([
+      // 1. Student count
+      this.supabaseService.client
+        .from(TABLES.PROFILES)
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'student')
+        .eq('is_active', true),
 
-        // 2. Total revenue
-        this.supabaseService.client
-          .from(TABLES.PAYMENTS)
-          .select('amount'),
+      // 2. Total revenue
+      this.supabaseService.client
+        .from(TABLES.PAYMENTS)
+        .select('amount'),
 
-        // 3. Active course count
-        this.supabaseService.client
-          .from(TABLES.COURSES)
-          .select('id', { count: 'exact', head: true })
-          .eq('is_active', true),
+      // 3. Active course count
+      this.supabaseService.client
+        .from(TABLES.COURSES)
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true),
 
-        // 4. Upcoming sessions (next 5)
-        this.supabaseService.client
-          .from(TABLES.LIVE_SESSIONS)
-          .select('id, topic, start_time, duration_minutes')
-          .eq('status', 'scheduled')
-          .gte('start_time', new Date().toISOString())
-          .order('start_time', { ascending: true })
-          .limit(5),
-      ]);
+      // 4. Upcoming sessions (next 5)
+      this.supabaseService.client
+        .from(TABLES.LIVE_SESSIONS)
+        .select('id, topic, start_time, duration_minutes')
+        .eq('status', 'scheduled')
+        .gte('start_time', new Date().toISOString())
+        .order('start_time', { ascending: true })
+        .limit(5),
+    ]);
 
-    const students = (studentCount as any).count ?? 0;
-    const activeCourses = (courseResult as any).count ?? 0;
-    const totalRevenue = ((revenueResult.data ?? []) as any[]).reduce(
+    const studentCount = results[0].status === 'fulfilled' ? (results[0].value as any).count ?? 0 : 0;
+    const revenueResult = results[1].status === 'fulfilled' ? results[1].value : null;
+    const courseResult = results[2].status === 'fulfilled' ? results[2].value : null;
+    const sessionsResult = results[3].status === 'fulfilled' ? results[3].value : null;
+
+    const activeCourses = (courseResult as any)?.count ?? 0;
+    const totalRevenue = ((revenueResult?.data ?? []) as any[]).reduce(
       (sum: number, row: any) => sum + Number(row.amount ?? 0),
       0,
     );
 
     return {
-      studentCount: students,
+      studentCount,
       totalRevenue,
       activeCourses,
-      upcomingSessions: (sessions.data ?? []).map((s: any) => ({
+      upcomingSessions: ((sessionsResult?.data ?? []) as any[]).map((s: any) => ({
         id: s.id,
         topic: s.topic,
         startTime: s.start_time,

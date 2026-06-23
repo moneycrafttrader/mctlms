@@ -8,7 +8,9 @@ import {
 import { UserRole, Batch } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { EmailService } from '../email/email.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateBatchDto } from './dto/create-batch.dto';
 import { AssignStudentsDto } from './dto/assign-students.dto';
 import { AddStudentDto } from './dto/add-student.dto';
@@ -21,6 +23,7 @@ export class BatchesService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly emailService: EmailService,
+    private readonly observabilityService: ObservabilityService,
   ) {}
 
   async findAll(page = 1, limit = 20, isActive?: boolean) {
@@ -114,6 +117,15 @@ export class BatchesService {
       throw new BadRequestException('Failed to create batch');
     }
 
+    logEntityEvent(
+      this.observabilityService,
+      'BATCH_CREATED',
+      'batch',
+      data.id,
+      createdBy,
+      { name: dto.name, courseId: dto.courseId },
+    ).catch(() => {});
+
     return data as unknown as Batch;
   }
 
@@ -161,6 +173,15 @@ export class BatchesService {
       this.logger.error(`Failed to update batch ${id}: ${error?.message}`);
       throw new BadRequestException('Failed to update batch');
     }
+
+    logEntityEvent(
+      this.observabilityService,
+      'BATCH_UPDATED',
+      'batch',
+      id,
+      'system',
+      { changes: Object.keys(updateData).join(',') },
+    ).catch(() => {});
 
     return data as unknown as Batch;
   }

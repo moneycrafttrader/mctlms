@@ -11,9 +11,11 @@ import Redis from 'ioredis';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { MuxService } from '../mux/mux.service';
 import { PlaybackGuardService } from '../playback/playback-guard.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
 import { Transaction } from '../../common/utils/transaction.util';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateRecordingDto } from './dto/create-recording.dto';
 import { CreateTopicDto } from '../videos/dto/create-topic.dto';
 import { RequestUploadDto } from '../videos/dto/request-upload.dto';
@@ -29,6 +31,7 @@ export class RecordingsService {
     private readonly supabaseService: SupabaseService,
     private readonly muxService: MuxService,
     private readonly playbackGuard: PlaybackGuardService,
+    private readonly observabilityService: ObservabilityService,
     redisService: RedisService,
   ) {
     this.redis = redisService.getOrThrow();
@@ -136,6 +139,15 @@ export class RecordingsService {
       .from(TABLES.RECORDING_BATCHES)
       .select('batches!inner(name)')
       .eq('recording_id', recording.id);
+
+    logEntityEvent(
+      this.observabilityService,
+      'RECORDING_CREATED',
+      'recording',
+      recording.id,
+      'system',
+      { title: dto.title, batchIds: dto.batchIds },
+    ).catch(() => {});
 
     return {
       ...recording,
@@ -328,7 +340,7 @@ export class RecordingsService {
   async deleteRecording(id: string) {
     const { data: recording } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
-      .select('id, mux_asset_id')
+      .select('id, mux_asset_id, title')
       .eq('id', id)
       .single();
 
@@ -349,6 +361,15 @@ export class RecordingsService {
       this.logger.error(`Failed to delete recording ${id}: ${error.message}`);
       throw new BadRequestException('Failed to delete recording');
     }
+
+    logEntityEvent(
+      this.observabilityService,
+      'RECORDING_DELETED',
+      'recording',
+      id,
+      'system',
+      { title: recording.title },
+    ).catch(() => {});
 
     return { deleted: true };
   }

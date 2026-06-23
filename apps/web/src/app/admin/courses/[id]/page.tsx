@@ -1,4 +1,4 @@
-import { getCourse, getCourseStats, getCourseBatches, getCourses } from '@/lib/api/courses';
+import { getCourse, getCourseStats, getCourses } from '@/lib/api/courses';
 import { CourseDetailsView } from '@/components/admin/courses/course-details-view';
 import { notFound } from 'next/navigation';
 
@@ -22,6 +22,9 @@ export default async function AdminCourseDetailPage({
       <CourseDetailsView
         courseId={id}
         courseName={course.name}
+        courseDescription={course.description}
+        isActive={course.is_active}
+        createdAt={course.created_at}
         initialStats={stats}
         initialBatches={course.batches ?? []}
         allCourses={allCoursesResult.items}

@@ -119,6 +119,7 @@ export class RecordingsController {
 
   // ── Student: Batch Recordings ──────────────────────────────
 
+  @Roles(UserRole.STUDENT)
   @Get('recordings/batch/:batchId')
   getBatchRecordings(
     @Param('batchId') batchId: string,
@@ -129,6 +130,7 @@ export class RecordingsController {
 
   // ── Student: My Recordings ─────────────────────────────────
 
+  @Roles(UserRole.STUDENT)
   @Get('recordings/my')
   getMyRecordings(
     @CurrentUser() user: { id: string },
@@ -137,6 +139,7 @@ export class RecordingsController {
     return this.recordingsService.getRecordingsForStudent(user.id, topicId);
   }
 
+  @Roles(UserRole.STUDENT)
   @Post('recordings/:id/authorize')
   authorizePlayback(
     @Param('id') id: string,
@@ -148,6 +151,7 @@ export class RecordingsController {
     return this.recordingsService.authorizePlayback(id, user.id, deviceId, ip);
   }
 
+  @Roles(UserRole.STUDENT)
   @Get('recordings/:id/play')
   getPlaybackUrl(
     @Param('id') id: string,
@@ -160,6 +164,7 @@ export class RecordingsController {
     return this.recordingsService.getPlaybackUrl(id, user.id, token, deviceId, ip);
   }
 
+  @Roles(UserRole.STUDENT)
   @Post('recordings/:id/progress')
   updateProgress(
     @Param('id') id: string,

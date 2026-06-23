@@ -7,427 +7,164 @@ import {
   Plus,
   UserPlus,
   Upload,
-  Loader2,
-  Search,
-  X,
-  CheckCircle,
-  XCircle,
   Link2,
   Trash2,
+  CheckCircle2,
+  Calendar,
+  GraduationCap,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   type User,
   getStudents,
   createUser,
   deleteUser,
 } from '@/lib/api/users';
-import { FileDropzone } from '@/components/admin/bulk-upload/file-dropzone';
+import { AdminPageHeader } from '@/components/shared/AdminPageHeader';
+import { AdminSection } from '@/components/shared/AdminSection';
+import { AdminStatCard } from '@/components/shared/AdminStatCard';
+import { AdminDataTable, type AdminDataTableColumn } from '@/components/shared/AdminDataTable';
+import { AdminTableSkeleton } from '@/components/shared/AdminSkeletons';
+import { AdminEmptyState } from '@/components/shared/AdminEmptyState';
+import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { FileDropzone } from '@/components/admin/bulk-upload/file-dropzone';
 import { AssignBatchModal } from './assign-batch-modal';
 
 interface StudentsPageClientProps {
   initialStudents: User[];
   initialTotal: number;
-
 }
 
-export function StudentsPageClient({
-  initialStudents,
-  initialTotal,
-}: StudentsPageClientProps) {
+export function StudentsPageClient({ initialStudents, initialTotal }: StudentsPageClientProps) {
   const router = useRouter();
   const [students, setStudents] = useState<User[]>(initialStudents);
   const [total, setTotal] = useState(initialTotal);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [addTab, setAddTab] = useState<'single' | 'bulk'>('single');
-  const [search, setSearch] = useState('');
-
-  // Single-add form
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [addError, setAddError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // Assign batch modal
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignTargets, setAssignTargets] = useState<string[]>([]);
-
-  // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const result = await getStudents();
       setStudents(result.items);
       setTotal(result.total);
-    } catch {
-      // silent
-    }
+    } catch { /* silent */ }
+    finally { setLoading(false); }
     router.refresh();
   }, [router]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = async () => {
     if (!deleteTarget) return;
-    try {
-      await deleteUser(deleteTarget.id);
-      setDeleteTarget(null);
-      await refresh();
-    } catch {
-      // silent
-    }
-  }, [deleteTarget, refresh]);
-
-  const resetForm = () => {
-    setFirstName('');
-    setLastName('');
-    setEmail('');
-    setPhone('');
-    setAddError('');
+    try { await deleteUser(deleteTarget.id); setDeleteTarget(null); refresh(); }
+    catch { setDeleteTarget(null); }
   };
 
   const handleSingleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError('');
-    setSubmitting(true);
+    e.preventDefault(); setAddError(''); setSubmitting(true);
     try {
-      await createUser({
-        name: `${firstName} ${lastName}`.trim(),
-        email,
-        role: 'student',
-        phone: phone || undefined,
-      });
-      resetForm();
-      setShowAddModal(false);
-      refresh();
-    } catch (err: any) {
-      setAddError(err.message || 'Failed to create student');
-    } finally {
-      setSubmitting(false);
-    }
+      await createUser({ name: `${firstName} ${lastName}`.trim(), email, role: 'student', phone: phone || undefined });
+      setFirstName(''); setLastName(''); setEmail(''); setPhone('');
+      setShowAddModal(false); refresh();
+    } catch (err: any) { setAddError(err.message || 'Failed'); }
+    finally { setSubmitting(false); }
   };
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const openAssignBulk = () => { setAssignTargets(Array.from(selectedIds)); setShowAssignModal(true); };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filtered.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filtered.map((s) => s.id)));
-    }
-  };
+  const studentsWithBatches = students.filter(s => (s.batches?.length ?? 0) > 0).length;
+  const activeStudents = students.filter(s => s.is_active).length;
+  const newThisMonth = students.filter(s => { const d = new Date(s.created_at); const n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }).length;
 
-  const openAssignSingle = (studentId: string, studentName: string) => {
-    setAssignTargets([studentId]);
-    setShowAssignModal(true);
-  };
-
-  const openAssignBulk = () => {
-    setAssignTargets(Array.from(selectedIds));
-    setShowAssignModal(true);
-  };
-
-  const filtered = search
-    ? students.filter(
-        (s) =>
-          s.name?.toLowerCase().includes(search.toLowerCase()) ||
-          s.email?.toLowerCase().includes(search.toLowerCase()),
-      )
-    : students;
-
-  const hasSelection = selectedIds.size > 0;
+  const columns: AdminDataTableColumn<User>[] = [
+    { key: 'name', header: 'Name', sortable: true,
+      render: (s) => <a href={`/admin/students/${s.id}`} className="text-brand-600 hover:underline font-medium">{s.name}</a> },
+    { key: 'email', header: 'Email', sortable: true, hideOnMobile: true },
+    { key: 'phone', header: 'Phone', render: (s) => s.phone || '—', hideOnMobile: true },
+    { key: 'batches', header: 'Batches',
+      render: (s) => <span>{s.batches?.length ?? 0}</span> },
+    { key: 'status', header: 'Status',
+      render: (s) => <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${s.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>{s.is_active ? 'Active' : 'Inactive'}</span> },
+    { key: 'actions', header: 'Actions',
+      render: (s) => (
+        <div className="flex items-center gap-1">
+          <button onClick={() => { setAssignTargets([s.id]); setShowAssignModal(true); }} className="rounded-lg px-2 py-1 text-xs font-medium text-text-secondary hover:bg-surface-muted transition-colors">Assign</button>
+          <button onClick={() => setDeleteTarget(s)} className="rounded-lg px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors">Archive</button>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">All Students</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {total} student{total !== 1 ? 's' : ''} enrolled
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              resetForm();
-              setAddTab('single');
-              setShowAddModal(true);
-            }}
-            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add Student
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <AdminPageHeader title="All Students" description={`${total} student${total !== 1 ? 's' : ''} enrolled`} actions={
+        <button onClick={() => { setShowAddModal(true); setAddTab('single'); }} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors">
+          <Plus className="h-4 w-4" /> Add Student
+        </button>
+      } />
 
-      {/* Bulk action bar */}
-      {hasSelection && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg bg-brand-50 px-4 py-3 text-sm">
-          <span className="font-medium text-brand-700">
-            {selectedIds.size} student{selectedIds.size !== 1 ? 's' : ''} selected
-          </span>
-          <button
-            onClick={openAssignBulk}
-            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
-          >
-            <Link2 className="h-3.5 w-3.5" />
-            Assign to Batch
-          </button>
-          <button
-            onClick={() => setSelectedIds(new Set())}
-            className="ml-auto text-xs text-gray-500 hover:text-gray-700"
-          >
-            Clear selection
-          </button>
+      <AdminSection title="Overview">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <AdminStatCard label="Total Students" value={total} icon={Users} iconColor="bg-brand-50 text-brand-600" />
+          <AdminStatCard label="Active" value={activeStudents} sublabel={`${studentsWithBatches} in batches`} icon={GraduationCap} iconColor="bg-emerald-50 text-emerald-600" />
+          <AdminStatCard label="New This Month" value={newThisMonth} icon={Calendar} iconColor="bg-blue-50 text-blue-600" />
         </div>
-      )}
+      </AdminSection>
 
-      {/* Search */}
-      <div className="mb-4 relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search by name or email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 pl-10 pr-4 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+      {loading ? (
+        <AdminTableSkeleton rows={5} cols={6} showBulk />
+      ) : students.length === 0 ? (
+        <AdminEmptyState icon={Users} title="No students" description="Add your first student to get started." actionLabel="Add Student" actionHref="#" />
+      ) : (
+        <AdminDataTable
+          columns={columns}
+          data={students}
+          keyExtractor={(s) => s.id}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search by name or email..."
+          bulkActions={[{ label: 'Assign to Batch', onClick: () => openAssignBulk() }]}
+          exportCsv csvFilename="students.csv"
+          csvHeaders={['Name', 'Email', 'Phone', 'Batches', 'Status']}
+          getCsvRow={(s) => [s.name, s.email, s.phone || '', String(s.batches?.length ?? 0), s.is_active ? 'Active' : 'Inactive']}
         />
-      </div>
-
-      {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-            <Users className="mb-3 h-10 w-10 text-gray-300" />
-            <p className="text-sm font-medium">No students found</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
-                  <th className="w-10 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                      onChange={toggleSelectAll}
-                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                    />
-                  </th>
-                  <th className="px-6 py-3">Name</th>
-                  <th className="px-6 py-3">Email</th>
-                  <th className="px-6 py-3">Phone</th>
-                  <th className="px-6 py-3">Current Batches</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((student) => (
-                  <tr
-                    key={student.id}
-                    className={`border-b border-gray-50 hover:bg-gray-50 ${
-                      selectedIds.has(student.id) ? 'bg-brand-50/50' : ''
-                    }`}
-                  >
-                    <td className="px-4 py-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(student.id)}
-                        onChange={() => toggleSelect(student.id)}
-                        className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                      />
-                    </td>
-                    <td className="px-6 py-4 font-medium text-gray-900">
-                      {student.name}
-                    </td>
-                    <td className="px-6 py-4 text-gray-600">{student.email}</td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {student.phone || '\u2014'}
-                    </td>
-                    <td className="px-6 py-4">
-                      {student.batches && student.batches.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {student.batches.map((b) => (
-                            <span
-                              key={b.id}
-                              className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700"
-                            >
-                              {b.name}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">&mdash;</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openAssignSingle(student.id, student.name)}
-                          className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                        >
-                          <Link2 className="h-3.5 w-3.5" />
-                          Assign
-                        </button>
-                        <button
-                          onClick={() => setDeleteTarget(student)}
-                          className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Archive
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Add Student Modal */}
-      {showAddModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          onClick={() => setShowAddModal(false)}
-        >
-          <div
-            className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-900">Add Student</h2>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="flex border-b border-gray-200">
-              <button
-                onClick={() => setAddTab('single')}
-                className={`flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium ${
-                  addTab === 'single'
-                    ? 'border-b-2 border-brand-600 text-brand-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <UserPlus className="h-4 w-4" />
-                Add Single
-              </button>
-              <button
-                onClick={() => setAddTab('bulk')}
-                className={`flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium ${
-                  addTab === 'bulk'
-                    ? 'border-b-2 border-brand-600 text-brand-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Upload className="h-4 w-4" />
-                Bulk Upload
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              {addTab === 'single' ? (
-                <form onSubmit={handleSingleAdd} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600">First Name</label>
-                      <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600">Last Name</label>
-                      <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">Email</label>
-                    <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">Phone (optional)</label>
-                    <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                      className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                  </div>
-                  {addError && (
-                    <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                      <XCircle className="h-4 w-4 flex-shrink-0" />
-                      {addError}
-                    </div>
-                  )}
-                  <button type="submit" disabled={submitting}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-                  >
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {submitting ? 'Creating...' : 'Create Student'}
-                  </button>
-                </form>
-              ) : (
-                <>
-                  <FileDropzone onUploadSuccess={refresh} />
-                </>
-              )}
-            </div>
-          </div>
-        </div>
       )}
 
-      {/* Assign to Batch Modal */}
-      <AssignBatchModal
-        isOpen={showAssignModal}
-        studentIds={assignTargets}
-        currentBatches={
-          assignTargets.length === 1
-            ? students.find((s) => s.id === assignTargets[0])?.batches ?? []
-            : []
-        }
-        studentLabel={
-          assignTargets.length === 1
-            ? `${students.find((s) => s.id === assignTargets[0])?.name ?? ''}`
-            : `${assignTargets.length} students selected`
-        }
-        onClose={() => {
-          setShowAssignModal(false);
-          setAssignTargets([]);
-        }}
-        onSuccess={() => {
-          setSelectedIds(new Set());
-          refresh();
-        }}
-      />
+      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setAddError(''); }} title="Add Student">
+        <div className="flex border-b border-surface-border">
+          <button onClick={() => setAddTab('single')} className={`flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium ${addTab === 'single' ? 'border-b-2 border-brand-600 text-brand-600' : 'text-text-muted'}`}>Single</button>
+          <button onClick={() => setAddTab('bulk')} className={`flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium ${addTab === 'bulk' ? 'border-b-2 border-brand-600 text-brand-600' : 'text-text-muted'}`}>Bulk</button>
+        </div>
+        <div className="p-4">
+          {addTab === 'single' ? (
+            <form onSubmit={handleSingleAdd} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium text-text-secondary mb-1">First Name *</label><input required value={firstName} onChange={e => setFirstName(e.target.value)} className="input-field text-sm" /></div>
+                <div><label className="block text-xs font-medium text-text-secondary mb-1">Last Name</label><input value={lastName} onChange={e => setLastName(e.target.value)} className="input-field text-sm" /></div>
+              </div>
+              <div><label className="block text-xs font-medium text-text-secondary mb-1">Email *</label><input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="input-field text-sm" /></div>
+              <div><label className="block text-xs font-medium text-text-secondary mb-1">Phone</label><input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className="input-field text-sm" /></div>
+              {addError && <p className="text-sm text-red-600">{addError}</p>}
+              <button type="submit" disabled={submitting} className="w-full rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">{submitting ? 'Creating...' : 'Create Student'}</button>
+            </form>
+          ) : <FileDropzone onUploadSuccess={refresh} />}
+        </div>
+      </Modal>
 
-      <ConfirmDialog
-        isOpen={deleteTarget !== null}
-        title="Archive Student"
-        message={
-          deleteTarget
-            ? `Are you sure you want to archive ${deleteTarget.name}? They will no longer be able to log in, but their data will be preserved.`
-            : ''
-        }
-        confirmLabel="Archive"
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
-      />
+      <AssignBatchModal isOpen={showAssignModal} studentIds={assignTargets} currentBatches={assignTargets.length === 1 ? students.find(s => s.id === assignTargets[0])?.batches ?? [] : []} studentLabel={assignTargets.length === 1 ? students.find(s => s.id === assignTargets[0])?.name ?? '' : `${assignTargets.length} students`} onClose={() => { setShowAssignModal(false); setAssignTargets([]); }} onSuccess={() => { setSelectedIds(new Set()); refresh(); }} />
+      <ConfirmDialog isOpen={!!deleteTarget} title="Archive Student" message={deleteTarget ? `Archive ${deleteTarget.name}? Data will be preserved.` : ''} confirmLabel="Archive" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />
     </div>
   );
 }

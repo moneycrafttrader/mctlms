@@ -1,6 +1,8 @@
 import { getAdminOverview } from '@/lib/api/analytics';
 import { getMySessions } from '@/lib/api/live-sessions';
 import { getReviewQueue } from '@/lib/api/assessments';
+import { getEmailStats } from '@/lib/api/email-logs';
+import { getObservabilityDashboard } from '@/lib/api/observability';
 import { AdminDashboardClient } from './admin-dashboard-client';
 
 export const dynamic = 'force-dynamic';
@@ -22,28 +24,40 @@ export default async function AdminDashboardPage() {
   };
   let reviewQueue: unknown[] = [];
   let liveSessions: SessionInfo[] = [];
+  let failedEmails = 0;
+  let systemErrors = 0;
+  let totalEmails = 0;
 
   try {
-    const [overviewData, queueData, sessionsData] = await Promise.all([
+    const results = await Promise.allSettled([
       getAdminOverview(),
-      getReviewQueue({ status: 'pending', limit: 5 }).catch(() => []),
-      getMySessions().catch(() => ({ upcoming: [], past: [] })),
+      getReviewQueue({ status: 'pending', limit: 5 }),
+      getMySessions(),
+      getEmailStats().catch(() => null),
+      getObservabilityDashboard().catch(() => null),
     ]);
-    overview = overviewData;
-    reviewQueue = Array.isArray(queueData) ? queueData : [];
-    const rawSessions = (sessionsData as { upcoming?: unknown[] }).upcoming ?? [];
-    liveSessions = rawSessions.slice(0, 5).map((s) => {
-      const rec = s as Record<string, unknown>;
-      return {
-        id: String(rec.id),
-        topic: String(rec.topic),
-        start_time: String(rec.start_time),
-        duration_minutes: Number(rec.duration_minutes),
-        status: String(rec.status),
-      };
-    });
+
+    if (results[0].status === 'fulfilled') overview = results[0].value;
+    if (results[1].status === 'fulfilled') reviewQueue = Array.isArray(results[1].value) ? results[1].value : [];
+    if (results[2].status === 'fulfilled') {
+      const rawSessions = (results[2].value as { upcoming?: unknown[] }).upcoming ?? [];
+      liveSessions = (rawSessions as any[]).slice(0, 5).map((s) => ({
+        id: String(s.id),
+        topic: String(s.topic),
+        start_time: String(s.start_time),
+        duration_minutes: Number(s.duration_minutes),
+        status: String(s.status),
+      }));
+    }
+    if (results[3].status === 'fulfilled' && results[3].value) {
+      failedEmails = results[3].value.failed ?? 0;
+      totalEmails = results[3].value.total ?? 0;
+    }
+    if (results[4].status === 'fulfilled' && results[4].value) {
+      systemErrors = results[4].value.errorCountsLast24h ?? 0;
+    }
   } catch {
-    // API unavailable
+    // APIs unavailable
   }
 
   const sessions: SessionInfo[] = liveSessions.length > 0
@@ -63,6 +77,9 @@ export default async function AdminDashboardPage() {
       activeCourses={overview.activeCourses}
       upcomingSessions={sessions}
       reviewCount={reviewQueue.length}
+      failedEmails={failedEmails}
+      systemErrors={systemErrors}
+      totalEmails={totalEmails}
     />
   );
 }

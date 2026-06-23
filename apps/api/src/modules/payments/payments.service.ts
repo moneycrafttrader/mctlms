@@ -13,7 +13,9 @@ import {
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { OutboxService } from '../outbox/outbox.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { Transaction } from '../../common/utils/transaction.util';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreatePaymentPlanDto } from './dto/create-payment-plan.dto';
 import { MarkInstallmentPaidDto } from './dto/mark-installment-paid.dto';
 
@@ -24,6 +26,7 @@ export class PaymentsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly outboxService: OutboxService,
+    private readonly observabilityService: ObservabilityService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────
@@ -96,6 +99,14 @@ export class PaymentsService {
     }
 
     const planId = (plan as any).id;
+    logEntityEvent(
+      this.observabilityService,
+      'PAYMENT_PLAN_CREATED',
+      'payment_plan',
+      planId,
+      adminId,
+      { studentId: dto.studentId, courseId: dto.courseId, totalAmount: dto.totalAmount },
+    ).catch(() => {});
 
     // 2. Generate installments
     const startDate = dto.startDate
@@ -160,8 +171,6 @@ export class PaymentsService {
       installments: createdInstallments ?? [],
     };
   }
-
-  // ──────────────────────────────────────────────────────────────
   //  markInstallmentPaid
   // ──────────────────────────────────────────────────────────────
 
@@ -306,6 +315,15 @@ export class PaymentsService {
     await this.outboxService.enqueue('receipt', { paymentId: payment.id }).catch((err) =>
       this.logger.error(`Failed to enqueue receipt for payment ${payment.id}: ${err.message}`),
     );
+
+    logEntityEvent(
+      this.observabilityService,
+      'PAYMENT_RECEIVED',
+      'payment',
+      payment.id,
+      adminId,
+      { studentId: plan.student_id, installmentId, amount: inst.amount },
+    ).catch(() => {});
 
     return payment as any;
   }

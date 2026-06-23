@@ -22,6 +22,7 @@ export const ROUTES = {
     ANNOUNCEMENTS: '/admin/announcements',
     AUDIT_LOGS: '/admin/audit-logs',
     EMAIL_LOGS: '/admin/email-logs',
+    FINANCE: '/admin/finance',
   },
   STUDENT: {
     HOME: '/student',

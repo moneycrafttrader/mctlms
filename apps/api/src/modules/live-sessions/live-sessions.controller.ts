@@ -57,6 +57,7 @@ export class LiveSessionsController {
     );
   }
 
+  @Roles(UserRole.STUDENT)
   @Get('my')
   getMySessions(@CurrentUser() user: { id: string }) {
     return this.liveSessionsService.getForStudent(user.id);
@@ -74,6 +75,7 @@ export class LiveSessionsController {
    * Request a single-use join token. Validates the session is joinable,
    * revokes previous tokens, and returns a fresh token.
    */
+  @Roles(UserRole.STUDENT)
   @Post(':id/request-join')
   async requestJoin(
     @Param('id') id: string,
@@ -88,6 +90,7 @@ export class LiveSessionsController {
    * Consume a single-use join token and return the Zoom join URL.
    * Token is sent in the request body, never in the URL.
    */
+  @Roles(UserRole.STUDENT)
   @Post(':id/join')
   async getJoinUrl(
     @Param('id') id: string,
@@ -113,6 +116,7 @@ export class LiveSessionsController {
    * Mark the current user as having left the session.
    * Clears the active join marker in Redis.
    */
+  @Roles(UserRole.STUDENT)
   @Post(':id/leave')
   async leaveSession(
     @Param('id') id: string,

@@ -101,7 +101,22 @@ export class AttemptsService {
       .select()
       .single();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      // Handle concurrent race: DB unique constraint caught a duplicate in_progress attempt
+      if ((insertError as any).code === '23505') {
+        this.logger.warn(`Race condition handled: duplicate in_progress attempt for user=${userId} test=${testId}`);
+        const { data: existing } = await this.supabaseService.client
+          .from(TABLES.TEST_ATTEMPTS)
+          .select(ATTEMPT_WITH_ANSWERS_SELECT)
+          .eq('test_id', testId)
+          .eq('user_id', userId)
+          .eq('status', 'in_progress')
+          .single();
+
+        if (existing) return this.buildAttemptResponse(existing);
+      }
+      throw insertError;
+    }
 
     const questions = test.test_question_bank ?? [];
     if (questions.length > 0) {

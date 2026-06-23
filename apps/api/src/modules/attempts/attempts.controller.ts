@@ -32,6 +32,7 @@ export class AttemptsController {
     });
   }
 
+  @Roles(UserRole.STUDENT)
   @Get(':id')
   getAttempt(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.attemptsService.getAttempt(id, user.id);
@@ -67,6 +68,7 @@ export class AttemptsController {
     return this.attemptsService.submitAttempt(id, user.id, dto);
   }
 
+  @Roles(UserRole.STUDENT)
   @Get(':id/timer')
   getAttemptTimer(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.attemptsService.getAttemptTimer(id, user.id);

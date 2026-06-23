@@ -106,7 +106,7 @@ export class ZoomController {
   @Public()
   @Post('webhook')
   handleZoomWebhook(@Body() body: any, @Res() res: Response) {
-    console.log('--- ZOOM WEBHOOK RECEIVED ---', JSON.stringify(body, null, 2));
+    this.logger.log(`Zoom webhook received: ${body?.event ?? 'unknown'}`);
 
     if (body?.event === 'endpoint.url_validation') {
       const validationResponse = this.zoomService.validateWebhookChallenge(body.payload.plainToken);

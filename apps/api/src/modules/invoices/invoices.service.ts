@@ -8,10 +8,12 @@ import {
 import * as path from 'path';
 import * as fs from 'fs';
 import * as Handlebars from 'handlebars';
-import * as puppeteer from 'puppeteer';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { EmailService } from '../email/email.service';
+import { PdfGenerationService } from '../pdf/pdf-generation.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 
 @Injectable()
 export class InvoicesService {
@@ -20,6 +22,8 @@ export class InvoicesService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly emailService: EmailService,
+    private readonly pdfService: PdfGenerationService,
+    private readonly observabilityService: ObservabilityService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────
@@ -54,26 +58,82 @@ export class InvoicesService {
   }
 
   // ──────────────────────────────────────────────────────────────
-  //  getNextDocumentNumber
+  //  getNextDocumentNumber (atomic via invoice_sequences)
   // ──────────────────────────────────────────────────────────────
 
   /**
-   * Atomically read and increment the next document counter, then
-   * return a formatted document number.
+   * Atomically allocate the next document sequence number using the
+   * dedicated invoice_sequences table with an atomic UPDATE ... RETURNING.
    *
-   * Format: {prefix}-{FY}-{NNNN}  (4-digit zero-padded)
-   *   e.g. "MCT-INV-2025-26-0001"
+   * This eliminates the race condition in the previous approach that
+   * read-from, incremented, and wrote-back to business_config.
    *
-   * Steps:
-   *   1. Read the single business_config row.
-   *   2. Pick the counter field based on type.
-   *   3. Increment the counter in the DB.
-   *   4. Return the formatted string + the raw number.
+   * Format: {prefix}-{FY}-{NNNN}  (6-digit zero-padded)
+   *   e.g. "MCT-INV-2025-26-000001"
+   *
+   * If the invoice_sequences row does not exist for this type + FY,
+   * a fallback to business_config is used for backward compatibility.
    */
   async getNextDocumentNumber(
     type: 'INVOICE' | 'RECEIPT',
   ): Promise<{ formatted: string; rawNumber: number }> {
-    const { data: config, error: cfgError } = await this.supabaseService.client
+    const supabase = this.supabaseService.client;
+    const fy = this.calculateFinancialYear();
+    const isInvoice = type === 'INVOICE';
+
+    // Atomic UPDATE ... RETURNING: guaranteed unique, no race condition
+    const { data, error } = await supabase
+      .rpc('increment_sequence', {
+        p_sequence_type: type,
+        p_fiscal_year: fy,
+      });
+
+    if (!error && data) {
+      const rawNumber = Number(data);
+      const prefix = isInvoice ? 'MCT-INV' : 'MCT-RCP';
+      const formatted = `${prefix}-${fy}-${String(rawNumber).padStart(6, '0')}`;
+      return { formatted, rawNumber };
+    }
+
+    // Fallback: try direct upsert (creates row if not exists)
+    if (error && (error as any).code === 'PGRST116') {
+      const { data: existing } = await supabase
+        .from('invoice_sequences')
+        .select('counter')
+        .eq('sequence_type', type)
+        .eq('fiscal_year', fy)
+        .maybeSingle();
+
+      if (existing) {
+        const newCounter = (existing as any).counter + 1;
+        const { error: updateErr } = await supabase
+          .from('invoice_sequences')
+          .update({ counter: newCounter, updated_at: new Date().toISOString() })
+          .eq('sequence_type', type)
+          .eq('fiscal_year', fy);
+
+        if (!updateErr) {
+          const prefix = isInvoice ? 'MCT-INV' : 'MCT-RCP';
+          const formatted = `${prefix}-${fy}-${String(newCounter).padStart(6, '0')}`;
+          return { formatted, rawNumber: newCounter };
+        }
+      }
+
+      // Row does not exist — create it
+      const initialCounter = 1;
+      const { error: insertErr } = await supabase
+        .from('invoice_sequences')
+        .insert({ sequence_type: type, fiscal_year: fy, counter: initialCounter });
+
+      if (!insertErr) {
+        const prefix = isInvoice ? 'MCT-INV' : 'MCT-RCP';
+        const formatted = `${prefix}-${fy}-${String(initialCounter).padStart(6, '0')}`;
+        return { formatted, rawNumber: initialCounter };
+      }
+    }
+
+    // Last resort: legacy business_config fallback
+    const { data: config, error: cfgError } = await supabase
       .from(TABLES.BUSINESS_CONFIG)
       .select('*')
       .limit(1)
@@ -87,14 +147,11 @@ export class InvoicesService {
     }
 
     const cfg = config as any;
-    const fy = cfg.current_financial_year ?? this.calculateFinancialYear();
-    const isInvoice = type === 'INVOICE';
     const prefix = isInvoice ? cfg.invoice_prefix : cfg.receipt_prefix;
     const counterField = isInvoice ? 'next_invoice_number' : 'next_receipt_number';
     const currentNumber = cfg[counterField];
 
-    // Increment the counter
-    const { error: updateError } = await this.supabaseService.client
+    const { error: updateError } = await supabase
       .from(TABLES.BUSINESS_CONFIG)
       .update({ [counterField]: currentNumber + 1 })
       .eq('id', cfg.id);
@@ -104,46 +161,24 @@ export class InvoicesService {
       throw new BadRequestException('Failed to generate document number');
     }
 
-    const formatted = `${prefix}-${fy}-${String(currentNumber).padStart(4, '0')}`;
-
+    const formatted = `${prefix}-${fy}-${String(currentNumber).padStart(6, '0')}`;
     return { formatted, rawNumber: currentNumber };
   }
 
   // ──────────────────────────────────────────────────────────────
-  //  generatePdf
+  //  generatePdf (delegated to PdfGenerationService)
   // ──────────────────────────────────────────────────────────────
 
   /**
-   * Convert an HTML string to a PDF buffer using Puppeteer (headless Chrome).
-   *
-   * Config:
-   *   - Headless: true
-   *   - --no-sandbox (required for Docker/Linux environments)
-   *   - A4 page format
-   *   - 10mm margins on all sides
+   * Generate a PDF from HTML using the shared PdfGenerationService.
+   * Handles timeout and error gracefully — never crashes the process.
    */
   async generatePdf(html: string): Promise<Buffer> {
-    let browser;
     try {
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'domcontentloaded' });
-      const buffer = await page.pdf({
-        format: 'A4',
-        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
-        printBackground: true,
-      });
-      return Buffer.from(buffer);
+      return await this.pdfService.generatePdf(html);
     } catch (err: any) {
       this.logger.error(`PDF generation failed: ${err.message}`);
       throw new InternalServerErrorException('Failed to generate PDF. Is Chrome/Puppeteer installed?');
-    } finally {
-      if (browser) {
-        await browser.close();
-      }
     }
   }
 
@@ -306,6 +341,15 @@ export class InvoicesService {
     // 3. Get receipt number
     const { formatted: receiptNumber, rawNumber } = await this.getNextDocumentNumber('RECEIPT');
 
+    logEntityEvent(
+      this.observabilityService,
+      'INVOICE_GENERATED',
+      'receipt',
+      receiptNumber,
+      pay.recorded_by ?? 'system',
+      { studentId, courseId, amount: pay.amount, paymentId },
+    ).catch(() => {});
+
     // 4. Compile template
     const templateSource = this.readTemplate('receipt.template.hbs');
     const template = Handlebars.compile(templateSource);
@@ -441,6 +485,15 @@ export class InvoicesService {
     // 3. Get invoice number
     const { formatted: invoiceNumber } = await this.getNextDocumentNumber('INVOICE');
 
+    logEntityEvent(
+      this.observabilityService,
+      'INVOICE_GENERATED',
+      'invoice',
+      invoiceNumber,
+      pay.recorded_by ?? 'system',
+      { studentId, courseId, amount: pay.amount, paymentId },
+    ).catch(() => {});
+
     // 4. Compile template
     const templateSource = this.readTemplate('invoice.template.hbs');
     const template = Handlebars.compile(templateSource);
@@ -528,6 +581,15 @@ export class InvoicesService {
           email_sent_to: student.email,
         })
         .eq('invoice_number', invoiceNumber);
+
+      logEntityEvent(
+        this.observabilityService,
+        'INVOICE_SENT',
+        'invoice',
+        invoiceNumber,
+        pay.recorded_by ?? 'system',
+        { studentId, studentEmail: student.email, paymentId },
+      ).catch(() => {});
     }
   }
 

@@ -6,7 +6,9 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { TABLES } from '../../common/constants/tables.constant';
+import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 
@@ -14,7 +16,10 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly observabilityService: ObservabilityService,
+  ) {}
 
   async createAnnouncement(dto: CreateAnnouncementDto, actorId: string) {
     if (dto.targetType !== 'all' && !dto.targetId) {
@@ -45,6 +50,14 @@ export class NotificationsService {
       await this.sendAnnouncementNotifications(data.id).catch((err) => {
         this.logger.error(`Failed to send notifications for announcement ${data.id}: ${err.message}`);
       });
+      logEntityEvent(
+        this.observabilityService,
+        'ANNOUNCEMENT_PUBLISHED',
+        'announcement',
+        data.id,
+        actorId,
+        { title: dto.title, targetType: dto.targetType, targetId: dto.targetId },
+      ).catch(() => {});
     }
 
     return data;
@@ -184,6 +197,14 @@ export class NotificationsService {
       await this.sendAnnouncementNotifications(data.id).catch((err) => {
         this.logger.error(`Failed to send notifications for updated announcement ${data.id}: ${err.message}`);
       });
+      logEntityEvent(
+        this.observabilityService,
+        'ANNOUNCEMENT_PUBLISHED',
+        'announcement',
+        id,
+        'system',
+        { title: dto.title, targetType: dto.targetType, targetId: dto.targetId },
+      ).catch(() => {});
     }
 
     return data;
