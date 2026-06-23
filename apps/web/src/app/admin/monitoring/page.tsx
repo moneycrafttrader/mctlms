@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, useCallback } from 'react';
 import {
   AlertTriangle,
   Activity,
@@ -19,12 +19,15 @@ import {
   RotateCw,
   Send,
   Timer,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   getObservabilityDashboard,
   getErrors,
   getEvents,
+  resolveError,
+  reopenError,
   type DashboardOverview,
   type ErrorLogEntry,
   type EventLogEntry,
@@ -32,6 +35,9 @@ import {
 import { getEmailQueueStats, type EmailQueueStats } from '@/lib/api/email-logs';
 
 type Tab = 'errors' | 'events' | 'email-queue';
+type ErrorFilter = 'open' | 'resolved' | 'all';
+
+const AUTO_REFRESH_INTERVAL = 30_000;
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'text-red-600 bg-red-50 border-red-200',
@@ -76,11 +82,12 @@ function StatusBadge({ resolved }: { resolved: boolean }) {
   );
 }
 
-function SummaryCard({ title, value, icon: Icon, color }: {
+function SummaryCard({ title, value, icon: Icon, color, subtitle }: {
   title: string;
   value: string | number;
   icon: any;
   color: string;
+  subtitle?: string;
 }) {
   return (
     <div className="rounded-xl border border-surface-border bg-surface-card p-5">
@@ -88,6 +95,7 @@ function SummaryCard({ title, value, icon: Icon, color }: {
         <div>
           <p className="text-sm font-medium text-text-muted">{title}</p>
           <p className="mt-1 text-2xl font-bold text-text-primary">{value ?? '-'}</p>
+          {subtitle && <p className="mt-0.5 text-xs text-text-muted">{subtitle}</p>}
         </div>
         <div className={cn('rounded-xl p-3', color)}>
           <Icon className="h-5 w-5 text-white" />
@@ -99,6 +107,7 @@ function SummaryCard({ title, value, icon: Icon, color }: {
 
 export default function AdminMonitoringPage() {
   const [activeTab, setActiveTab] = useState<Tab>('errors');
+  const [errorFilter, setErrorFilter] = useState<ErrorFilter>('open');
 
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
@@ -107,7 +116,7 @@ export default function AdminMonitoringPage() {
   const [errors, setErrors] = useState<ErrorLogEntry[]>([]);
   const [errorsTotal, setErrorsTotal] = useState(0);
   const [errorsPage, setErrorsPage] = useState(1);
-  const [errorsLimit] = useState(15);
+  const [errorsLimit] = useState(20);
   const [loadingErrors, setLoadingErrors] = useState(false);
 
   const [events, setEvents] = useState<EventLogEntry[]>([]);
@@ -120,45 +129,99 @@ export default function AdminMonitoringPage() {
   const [loadingQueue, setLoadingQueue] = useState(false);
 
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [now, setNow] = useState(Date.now());
 
-  useEffect(() => { loadDashboard(); }, []);
-
-  useEffect(() => {
-    if (activeTab === 'errors') loadErrors(errorsPage);
-    if (activeTab === 'email-queue') loadQueueStats();
-  }, [activeTab, errorsPage]);
+  const resolving = useRef(new Set<string>());
 
   useEffect(() => {
-    if (activeTab === 'events') loadEvents(eventsPage);
-  }, [activeTab, eventsPage]);
+    const tick = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(tick);
+  }, []);
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     setLoadingDashboard(true);
     setDashboardError(false);
-    try { const data = await getObservabilityDashboard(); setDashboard(data); }
+    try { const data = await getObservabilityDashboard(); setDashboard(data); setLastUpdated(new Date()); }
     catch { setDashboardError(true); }
     finally { setLoadingDashboard(false); }
-  };
+  }, []);
 
-  const loadErrors = async (page: number) => {
+  const loadErrors = useCallback(async (page: number, filter: ErrorFilter) => {
     setLoadingErrors(true);
-    try { const r = await getErrors({ page, limit: errorsLimit }); setErrors(r.items); setErrorsTotal(r.total); }
-    catch { setErrors([]); }
+    try {
+      const resolvedParam = filter === 'all' ? undefined : filter === 'resolved';
+      const r = await getErrors({ page, limit: errorsLimit, resolved: resolvedParam });
+      setErrors(r.items);
+      setErrorsTotal(r.total);
+    } catch { setErrors([]); }
     finally { setLoadingErrors(false); }
-  };
+  }, [errorsLimit]);
 
-  const loadEvents = async (page: number) => {
+  const loadEvents = useCallback(async (page: number) => {
     setLoadingEvents(true);
     try { const r = await getEvents({ page, limit: eventsLimit }); setEvents(r.items); setEventsTotal(r.total); }
     catch { setEvents([]); }
     finally { setLoadingEvents(false); }
-  };
+  }, [eventsLimit]);
 
-  const loadQueueStats = async () => {
+  const loadQueueStats = useCallback(async () => {
     setLoadingQueue(true);
     try { setQueueStats(await getEmailQueueStats()); }
     catch { setQueueStats(null); }
     finally { setLoadingQueue(false); }
+  }, []);
+
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
+
+  useEffect(() => {
+    if (activeTab === 'errors') loadErrors(errorsPage, errorFilter);
+    if (activeTab === 'email-queue') loadQueueStats();
+  }, [activeTab, errorsPage, errorFilter, loadErrors, loadQueueStats]);
+
+  useEffect(() => {
+    if (activeTab === 'events') loadEvents(eventsPage);
+  }, [activeTab, eventsPage, loadEvents]);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      await loadDashboard();
+      if (activeTab === 'errors') await loadErrors(errorsPage, errorFilter);
+      if (activeTab === 'events') await loadEvents(eventsPage);
+      if (activeTab === 'email-queue') await loadQueueStats();
+    }, AUTO_REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loadDashboard, loadErrors, loadEvents, loadQueueStats, activeTab, errorsPage, errorFilter, eventsPage]);
+
+  const handleResolve = async (id: string) => {
+    if (resolving.current.has(id)) return;
+    resolving.current.add(id);
+    setErrors((prev) => prev.filter((e) => e.id !== id));
+    setErrorsTotal((prev) => Math.max(0, prev - 1));
+    try {
+      await resolveError(id);
+      await loadDashboard();
+    } catch {
+      await loadErrors(errorsPage, errorFilter);
+    } finally {
+      resolving.current.delete(id);
+    }
+  };
+
+  const handleReopen = async (id: string) => {
+    if (resolving.current.has(id)) return;
+    resolving.current.add(id);
+    setErrors((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, resolved: false, resolved_at: undefined, resolved_by: undefined } : e)),
+    );
+    try {
+      await reopenError(id);
+      await loadDashboard();
+    } catch {
+      await loadErrors(errorsPage, errorFilter);
+    } finally {
+      resolving.current.delete(id);
+    }
   };
 
   const errorsTotalPages = Math.ceil(errorsTotal / errorsLimit);
@@ -166,11 +229,21 @@ export default function AdminMonitoringPage() {
 
   const formatTime = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
+  const lastUpdatedSeconds = lastUpdated ? Math.floor((now - lastUpdated.getTime()) / 1000) : null;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Monitoring Dashboard</h1>
-        <p className="mt-1 text-sm text-text-muted">System observability, error tracking, event logging, and email queue monitoring</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Monitoring Dashboard</h1>
+          <p className="mt-1 text-sm text-text-muted">System observability, error tracking, event logging, and email queue monitoring</p>
+          {lastUpdatedSeconds !== null && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-text-muted">
+              <RefreshCw className="h-3 w-3" />
+              Last updated {lastUpdatedSeconds < 5 ? 'just now' : `${lastUpdatedSeconds} seconds ago`}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-1 rounded-xl border border-surface-border bg-surface-card p-1 w-fit flex-wrap">
@@ -197,11 +270,32 @@ export default function AdminMonitoringPage() {
             </div>
           ) : dashboard ? (
             <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <SummaryCard title="Errors (24h)" value={dashboard.errorCountsLast24h} icon={AlertTriangle} color="bg-red-600" />
-                <SummaryCard title="Events (24h)" value={dashboard.eventCountsLast24h} icon={Activity} color="bg-blue-600" />
-                <SummaryCard title="Total Metrics" value={dashboard.totalMetrics} icon={BarChart3} color="bg-purple-600" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <SummaryCard
+                  title="Open Errors"
+                  value={dashboard.openErrorCount}
+                  icon={AlertTriangle}
+                  color={dashboard.openErrorCount > 0 ? 'bg-red-600' : 'bg-green-600'}
+                  subtitle={dashboard.openErrorCount === 0 ? 'No active incidents' : undefined}
+                />
+                <SummaryCard title="Resolved Errors" value={dashboard.resolvedErrorCount} icon={CheckCircle2} color="bg-green-600" />
+                <SummaryCard title="Error Rate (24h)" value={dashboard.errorCountsLast24h} icon={Activity} color="bg-blue-600" />
+                <SummaryCard
+                  title="Slowest Endpoint"
+                  value={dashboard.slowestEndpoints[0]?.endpoint ? `${dashboard.slowestEndpoints[0].avgLatency}ms` : '—'}
+                  icon={Timer}
+                  color="bg-purple-600"
+                  subtitle={dashboard.slowestEndpoints[0]?.endpoint ?? undefined}
+                />
               </div>
+
+              {dashboard.openErrorCount === 0 && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
+                  <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500 mb-2" />
+                  <p className="text-lg font-semibold text-emerald-800">No Active Incidents</p>
+                  <p className="text-sm text-emerald-600 mt-1">All system errors have been resolved.</p>
+                </div>
+              )}
 
               {dashboard.errorCountsByType.length > 0 && (
                 <div className="rounded-xl border border-surface-border bg-surface-card p-6">
@@ -249,65 +343,163 @@ export default function AdminMonitoringPage() {
               <div className="rounded-xl border border-surface-border bg-surface-card p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold text-text-primary">Error Log</h2>
-                  {loadingErrors && <Loader2 className="h-4 w-4 animate-spin text-text-muted" />}
+                  <div className="flex items-center gap-2">
+                    {loadingErrors && <Loader2 className="h-4 w-4 animate-spin text-text-muted" />}
+                    <div className="flex gap-1 rounded-lg border border-surface-border p-0.5">
+                      {(['open', 'resolved', 'all'] as const).map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => { setErrorFilter(f); setErrorsPage(1); }}
+                          className={cn(
+                            'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                            errorFilter === f
+                              ? 'bg-brand-navy text-white shadow-sm'
+                              : 'text-text-muted hover:text-text-primary',
+                          )}
+                        >
+                          {f === 'open' ? 'Open' : f === 'resolved' ? 'Resolved' : 'All'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-surface-border bg-surface-muted">
-                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Time</th>
-                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Type</th>
-                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Severity</th>
                         <th className="px-4 py-3 text-left font-medium text-text-secondary">Message</th>
-                        <th className="px-4 py-3 text-left font-medium text-text-secondary">URL</th>
-                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Resolved</th>
+                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Count</th>
+                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Severity</th>
+                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Status</th>
+                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Last Seen</th>
+                        <th className="px-4 py-3 text-left font-medium text-text-secondary">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-border">
                       {errors.length === 0 ? (
-                        <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-text-muted">No errors recorded.</td></tr>
-                      ) : errors.map((err) => (
-                        <Fragment key={err.id}>
-                          <tr onClick={() => setExpandedRow(expandedRow === err.id ? null : err.id)} className="cursor-pointer hover:bg-surface-muted/50 transition-colors">
-                            <td className="px-4 py-3 text-xs text-text-secondary whitespace-nowrap">{formatTime(err.created_at)}</td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 border border-red-200">
-                                <Server className="h-3 w-3" />{err.error_type}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3"><SeverityBadge severity={err.severity} /></td>
-                            <td className="px-4 py-3 max-w-xs truncate text-text-primary">{err.message || '-'}</td>
-                            <td className="px-4 py-3 max-w-[160px] truncate text-text-secondary font-mono text-xs">{err.url || '-'}</td>
-                            <td className="px-4 py-3"><StatusBadge resolved={err.resolved} /></td>
-                          </tr>
-                          {expandedRow === err.id && (
-                            <tr className="bg-surface-muted/30">
-                              <td colSpan={6} className="px-4 py-4">
-                                <div className="rounded-lg border border-surface-border bg-surface-card p-4 space-y-2">
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div><span className="text-xs font-medium text-text-muted">Error ID</span><p className="text-text-primary font-mono text-xs mt-0.5">{err.id}</p></div>
-                                    <div><span className="text-xs font-medium text-text-muted">Method</span><p className="text-text-primary text-xs mt-0.5">{err.method || '—'}</p></div>
-                                    <div><span className="text-xs font-medium text-text-muted">Status Code</span><p className="text-text-primary text-xs mt-0.5">{err.status_code ?? '—'}</p></div>
-                                    <div><span className="text-xs font-medium text-text-muted">Created At</span><p className="text-text-primary text-xs mt-0.5">{new Date(err.created_at).toLocaleString('en-IN')}</p></div>
-                                    {err.stack_trace && (
-                                      <div className="col-span-2">
-                                        <span className="text-xs font-medium text-text-muted">Stack Trace</span>
-                                        <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-surface-muted rounded-lg p-3 max-h-48 overflow-y-auto">{err.stack_trace}</pre>
-                                      </div>
+                        <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-text-muted">
+                          {loadingErrors ? (
+                            <div className="flex justify-center"><div className="h-6 w-6 animate-spin rounded-full border-4 border-surface-border border-t-brand-navy" /></div>
+                          ) : 'No errors found.'}
+                        </td></tr>
+                      ) : (
+                        (() => {
+                          const grouped = new Map<string, { ids: string[]; messages: Set<string>; firstSeen: string; lastSeen: string; count: number; resolved: boolean; entry: ErrorLogEntry }>();
+                          for (const err of errors) {
+                            const key = `${err.message}|${err.url ?? ''}`;
+                            const existing = grouped.get(key);
+                            if (existing) {
+                              existing.ids.push(err.id);
+                              existing.count++;
+                              if (err.created_at < existing.firstSeen) existing.firstSeen = err.created_at;
+                              if (err.created_at > existing.lastSeen) existing.lastSeen = err.created_at;
+                              if (!err.resolved) existing.resolved = false;
+                            } else {
+                              grouped.set(key, {
+                                ids: [err.id],
+                                messages: new Set([err.message]),
+                                firstSeen: err.created_at,
+                                lastSeen: err.created_at,
+                                count: 1,
+                                resolved: err.resolved,
+                                entry: err,
+                              });
+                            }
+                          }
+                          return Array.from(grouped.entries()).map(([key, g]) => {
+                            const err = g.entry;
+                            return (
+                              <Fragment key={key}>
+                                <tr onClick={() => setExpandedRow(expandedRow === key ? null : key)} className="cursor-pointer hover:bg-surface-muted/50 transition-colors">
+                                  <td className="px-4 py-3 max-w-xs truncate text-text-primary">{err.message || '-'}</td>
+                                  <td className="px-4 py-3">
+                                    <span className="inline-flex items-center justify-center rounded-full bg-surface-muted px-2 py-0.5 text-xs font-semibold text-text-secondary">{g.count}</span>
+                                  </td>
+                                  <td className="px-4 py-3"><SeverityBadge severity={err.severity} /></td>
+                                  <td className="px-4 py-3"><StatusBadge resolved={g.resolved} /></td>
+                                  <td className="px-4 py-3 text-xs text-text-secondary whitespace-nowrap">{formatTime(g.lastSeen)}</td>
+                                  <td className="px-4 py-3">
+                                    {g.resolved ? (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleReopen(err.id); }}
+                                        className="rounded-lg border border-surface-border px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface-muted hover:text-text-primary transition-colors"
+                                      >
+                                        Reopen
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleResolve(err.id); }}
+                                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                      >
+                                        Resolve
+                                      </button>
                                     )}
-                                    {err.context && Object.keys(err.context).length > 0 && (
-                                      <div className="col-span-2">
-                                        <span className="text-xs font-medium text-text-muted">Context</span>
-                                        <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-surface-muted rounded-lg p-3 max-h-32 overflow-y-auto">{JSON.stringify(err.context, null, 2)}</pre>
+                                  </td>
+                                </tr>
+                                {expandedRow === key && (
+                                  <tr className="bg-surface-muted/30">
+                                    <td colSpan={6} className="px-4 py-4">
+                                      <div className="rounded-lg border border-surface-border bg-surface-card p-4 space-y-2">
+                                        <div className="grid grid-cols-3 gap-4 text-sm">
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">URL</span>
+                                            <p className="text-text-primary font-mono text-xs mt-0.5">{err.url || '—'}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">Method</span>
+                                            <p className="text-text-primary text-xs mt-0.5">{err.method || '—'}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">Status Code</span>
+                                            <p className="text-text-primary text-xs mt-0.5">{err.status_code ?? '—'}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">Error Type</span>
+                                            <p className="text-text-primary text-xs mt-0.5">{err.error_type}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">First Seen</span>
+                                            <p className="text-text-primary text-xs mt-0.5">{new Date(g.firstSeen).toLocaleString('en-IN')}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">Last Seen</span>
+                                            <p className="text-text-primary text-xs mt-0.5">{new Date(g.lastSeen).toLocaleString('en-IN')}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">Occurrences</span>
+                                            <p className="text-text-primary text-xs mt-0.5">{g.count}</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">IDs</span>
+                                            <p className="text-text-primary text-xs mt-0.5 font-mono">{g.ids.length} record(s)</p>
+                                          </div>
+                                        </div>
+                                        {err.stack_trace && (
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">Stack Trace</span>
+                                            <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-surface-muted rounded-lg p-3 max-h-48 overflow-y-auto">{err.stack_trace}</pre>
+                                          </div>
+                                        )}
+                                        {err.context && Object.keys(err.context).length > 0 && (
+                                          <div>
+                                            <span className="text-xs font-medium text-text-muted">Context</span>
+                                            <pre className="mt-0.5 text-xs text-text-secondary font-mono whitespace-pre-wrap bg-surface-muted rounded-lg p-3 max-h-32 overflow-y-auto">{JSON.stringify(err.context, null, 2)}</pre>
+                                          </div>
+                                        )}
+                                        {g.ids.length > 1 && (
+                                          <div className="flex gap-2 mt-2">
+                                            <span className="text-xs text-text-muted">All {g.ids.length} occurrences share this error message.</span>
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      ))}
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          });
+                        })()
+                      )}
                     </tbody>
                   </table>
                 </div>

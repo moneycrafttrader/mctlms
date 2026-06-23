@@ -211,40 +211,94 @@ export class ObservabilityService {
     };
   }
 
+  async resolveError(id: string, userId: string) {
+    const { error } = await this.supabaseService.client
+      .from(TABLES.SYSTEM_ERRORS)
+      .update({
+        resolved: true,
+        resolved_at: new Date().toISOString(),
+        resolved_by: userId,
+      })
+      .eq('id', id);
+
+    if (error) {
+      this.logger.error(`Failed to resolve error ${id}: ${error.message}`);
+      throw error;
+    }
+
+    return { resolved: true };
+  }
+
+  async reopenError(id: string) {
+    const { error } = await this.supabaseService.client
+      .from(TABLES.SYSTEM_ERRORS)
+      .update({
+        resolved: false,
+        resolved_at: null,
+        resolved_by: null,
+      })
+      .eq('id', id);
+
+    if (error) {
+      this.logger.error(`Failed to reopen error ${id}: ${error.message}`);
+      throw error;
+    }
+
+    return { resolved: false };
+  }
+
   async getDashboard() {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    const [recentErrorsResult, errorTypeCountsResult, error24hResult, event24hResult, metricsResult, totalMetricsResult] =
-      await Promise.all([
-        this.supabaseService.client
-          .from(TABLES.SYSTEM_ERRORS)
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(10),
+    const [
+      recentErrorsResult,
+      errorTypeCountsResult,
+      error24hResult,
+      event24hResult,
+      metricsResult,
+      totalMetricsResult,
+      openErrorsResult,
+      resolvedErrorsResult,
+    ] = await Promise.all([
+      this.supabaseService.client
+        .from(TABLES.SYSTEM_ERRORS)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10),
 
-        this.supabaseService.client
-          .from(TABLES.SYSTEM_ERRORS)
-          .select('error_type'),
+      this.supabaseService.client
+        .from(TABLES.SYSTEM_ERRORS)
+        .select('error_type'),
 
-        this.supabaseService.client
-          .from(TABLES.SYSTEM_ERRORS)
-          .select('id', { count: 'exact', head: true })
-          .gte('created_at', twentyFourHoursAgo),
+      this.supabaseService.client
+        .from(TABLES.SYSTEM_ERRORS)
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', twentyFourHoursAgo),
 
-        this.supabaseService.client
-          .from(TABLES.SYSTEM_EVENTS)
-          .select('id', { count: 'exact', head: true })
-          .gte('created_at', twentyFourHoursAgo),
+      this.supabaseService.client
+        .from(TABLES.SYSTEM_EVENTS)
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', twentyFourHoursAgo),
 
-        this.supabaseService.client
-          .from(TABLES.PERFORMANCE_METRICS)
-          .select('metric_value, tags')
-          .eq('metric_name', 'endpoint_latency'),
+      this.supabaseService.client
+        .from(TABLES.PERFORMANCE_METRICS)
+        .select('metric_value, tags')
+        .eq('metric_name', 'endpoint_latency'),
 
-        this.supabaseService.client
-          .from(TABLES.PERFORMANCE_METRICS)
-          .select('id', { count: 'exact', head: true }),
-      ]);
+      this.supabaseService.client
+        .from(TABLES.PERFORMANCE_METRICS)
+        .select('id', { count: 'exact', head: true }),
+
+      this.supabaseService.client
+        .from(TABLES.SYSTEM_ERRORS)
+        .select('id', { count: 'exact', head: true })
+        .eq('resolved', false),
+
+      this.supabaseService.client
+        .from(TABLES.SYSTEM_ERRORS)
+        .select('id', { count: 'exact', head: true })
+        .eq('resolved', true),
+    ]);
 
     const recentErrors = recentErrorsResult.data ?? [];
     const errorRows = errorTypeCountsResult.data ?? [];
@@ -252,6 +306,8 @@ export class ObservabilityService {
     const eventCountsLast24h = (event24hResult as any).count ?? 0;
     const metricRows = metricsResult.data ?? [];
     const totalMetrics = (totalMetricsResult as any).count ?? 0;
+    const openErrorCount = (openErrorsResult as any).count ?? 0;
+    const resolvedErrorCount = (resolvedErrorsResult as any).count ?? 0;
 
     const errorCountsByTypeMap = new Map<string, number>();
     for (const row of errorRows as any[]) {
@@ -289,6 +345,8 @@ export class ObservabilityService {
       eventCountsLast24h,
       slowestEndpoints,
       totalMetrics,
+      openErrorCount,
+      resolvedErrorCount,
     };
   }
 }

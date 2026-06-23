@@ -2,7 +2,9 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
+  Param,
   Query,
 } from '@nestjs/common';
 import { UserRole } from '@lms/shared-types';
@@ -95,6 +97,23 @@ export class ObservabilityController {
       startDate,
       endDate,
     });
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Patch('errors/:id/resolve')
+  resolveError(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.observabilityService.resolveError(id, user.id);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Patch('errors/:id/reopen')
+  reopenError(
+    @Param('id') id: string,
+  ) {
+    return this.observabilityService.reopenError(id);
   }
 
   @Roles(UserRole.ADMIN)

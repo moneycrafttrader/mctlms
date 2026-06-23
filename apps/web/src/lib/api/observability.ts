@@ -45,6 +45,8 @@ export interface DashboardOverview {
   eventCountsLast24h: number;
   slowestEndpoints: { endpoint: string; avgLatency: number; count: number }[];
   totalMetrics: number;
+  openErrorCount: number;
+  resolvedErrorCount: number;
 }
 
 export interface PaginatedResponse<T> {
@@ -154,4 +156,16 @@ export async function getMetrics(
 
 export async function getObservabilityDashboard() {
   return fetchApi<DashboardOverview>(API_ROUTES.OBSERVABILITY_DASHBOARD);
+}
+
+export async function resolveError(id: string) {
+  return fetchApi<{ resolved: boolean }>(`${API_ROUTES.OBSERVABILITY_ERRORS}/${id}/resolve`, {
+    method: 'PATCH',
+  });
+}
+
+export async function reopenError(id: string) {
+  return fetchApi<{ resolved: boolean }>(`${API_ROUTES.OBSERVABILITY_ERRORS}/${id}/reopen`, {
+    method: 'PATCH',
+  });
 }

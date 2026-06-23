@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as puppeteer from 'puppeteer';
+import * as fs from 'fs';
 
 const PDF_TIMEOUT_MS = 30_000;
 
@@ -8,21 +10,35 @@ export class PdfGenerationService {
   private readonly logger = new Logger(PdfGenerationService.name);
   private browser: puppeteer.Browser | null = null;
   private lastHealthCheck = 0;
+  private browserAvailable = false;
+  private readonly configService: ConfigService;
+
+  constructor(configService: ConfigService) {
+    this.configService = configService;
+  }
 
   async onModuleInit() {
     await this.launchBrowser();
+    this.logger.log(`Puppeteer browser ${this.browserAvailable ? '✓ available' : '✗ unavailable'}`);
   }
 
   async onModuleDestroy() {
     await this.closeBrowser();
   }
 
+  isAvailable(): boolean {
+    return this.browserAvailable;
+  }
+
   async generatePdf(html: string): Promise<Buffer> {
     await this.ensureBrowser();
+    if (!this.browser) {
+      throw new Error('PDF generation unavailable: no browser instance');
+    }
     let page: puppeteer.Page | null = null;
 
     try {
-      page = await this.browser!.newPage();
+      page = await this.browser.newPage();
 
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('PDF generation timed out after 30s')), PDF_TIMEOUT_MS);
@@ -45,6 +61,7 @@ export class PdfGenerationService {
       this.logger.error(`PDF generation error: ${err.message}`);
       if (err.message?.includes('Target closed') || err.message?.includes('Protocol error')) {
         this.browser = null;
+        this.browserAvailable = false;
         this.launchBrowser().catch((e) => this.logger.error(`Browser relaunch failed: ${e.message}`));
       }
       throw err;
@@ -77,22 +94,48 @@ export class PdfGenerationService {
     await this.launchBrowser();
   }
 
+  private resolveExecutablePath(): string | undefined {
+    const envPath = this.configService.get<string>('PUPPETEER_EXECUTABLE_PATH');
+    if (envPath && fs.existsSync(envPath)) {
+      this.logger.log(`Using Puppeteer executable from PUPPETEER_EXECUTABLE_PATH: ${envPath}`);
+      return envPath;
+    }
+    if (fs.existsSync('/usr/bin/chromium')) {
+      this.logger.log('Using Chromium at /usr/bin/chromium');
+      return '/usr/bin/chromium';
+    }
+    if (fs.existsSync('/usr/bin/chromium-browser')) {
+      this.logger.log('Using Chromium at /usr/bin/chromium-browser');
+      return '/usr/bin/chromium-browser';
+    }
+    return undefined;
+  }
+
   private async launchBrowser(): Promise<void> {
+    const executablePath = this.resolveExecutablePath();
+    const launchOptions: any = {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    };
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+    }
+
     try {
-      this.browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-      });
+      this.browser = await puppeteer.launch(launchOptions);
+      this.browserAvailable = true;
       this.lastHealthCheck = Date.now();
       this.logger.log('Puppeteer browser launched');
 
       this.browser.on('disconnected', () => {
         this.logger.warn('Browser disconnected — will relaunch on next request');
         this.browser = null;
+        this.browserAvailable = false;
       });
     } catch (err: any) {
       this.logger.error(`Failed to launch browser: ${err.message}`);
       this.browser = null;
+      this.browserAvailable = false;
     }
   }
 
@@ -104,5 +147,6 @@ export class PdfGenerationService {
       this.logger.warn(`Browser close error: ${err.message}`);
     }
     this.browser = null;
+    this.browserAvailable = false;
   }
 }
