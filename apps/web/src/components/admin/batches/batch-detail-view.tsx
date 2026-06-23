@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, Component } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -15,6 +15,7 @@ import { Modal } from '@/components/ui/Modal';
 import { AdminWorkspaceHeader } from '@/components/shared/AdminWorkspaceHeader';
 import { AdminSection } from '@/components/shared/AdminSection';
 import { AdminStatCard } from '@/components/shared/AdminStatCard';
+import { AdminErrorState } from '@/components/shared/AdminErrorState';
 import { CurriculumTab } from './curriculum-tab';
 import { cn } from '@/lib/utils';
 import { fetchApi } from '@/lib/api-client';
@@ -26,6 +27,35 @@ import {
   removeStudentsFromBatch,
   addStudentToBatch,
 } from '@/lib/api/courses';
+
+class TabErrorBoundary extends Component<
+  { children: React.ReactNode; onRetry?: () => void },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; onRetry?: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+    this.props.onRetry?.();
+  };
+  render() {
+    if (this.state.hasError) {
+      return (
+        <AdminErrorState
+          message="Something went wrong while loading this tab."
+          details={this.state.error?.message}
+          onRetry={this.handleRetry}
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface BatchDetailViewProps {
   batch: Batch & {
@@ -69,8 +99,8 @@ export function BatchDetailView({ batch }: BatchDetailViewProps) {
     setLoadingStudents(true);
     try {
       const result = await getBatchStudents(batch.id, studentPage, 50);
-      setStudents(result.items);
-      setStudentTotal(result.total);
+      setStudents(result?.items ?? []);
+      setStudentTotal(result?.total ?? 0);
     } catch { /* silent */ }
     finally { setLoadingStudents(false); }
   }, [batch.id, studentPage]);
@@ -90,12 +120,12 @@ export function BatchDetailView({ batch }: BatchDetailViewProps) {
     setLoadingPayments(true);
     try {
       const studentsData = await getBatchStudents(batch.id, 1, 100);
-      const studentIds = studentsData.items.map((s) => s.id);
+      const studentIds = (studentsData?.items ?? []).map((s: any) => s.id);
       if (studentIds.length === 0) { setPayments([]); setLoadingPayments(false); return; }
       const allPlans: any[] = [];
       for (const sid of studentIds.slice(0, 5)) {
         try {
-          const plans = await fetchApi<any[]>(`/payments/plans/student/${sid}`);
+          const plans = await fetchApi<any[]>('/payments/plans/student/' + sid);
           allPlans.push(...(plans ?? []));
         } catch { /* skip */ }
       }
@@ -183,6 +213,7 @@ export function BatchDetailView({ batch }: BatchDetailViewProps) {
       </div>
 
       {/* Tab Content */}
+      <TabErrorBoundary onRetry={() => { if (activeTab === 'students') loadStudents(); if (activeTab === 'sessions') loadSessions(); if (activeTab === 'payments') loadPayments(); }}>
       <div role="tabpanel">
         {/* Overview Tab */}
         {activeTab === 'overview' && (
@@ -349,6 +380,7 @@ export function BatchDetailView({ batch }: BatchDetailViewProps) {
           </div>
         )}
       </div>
+      </TabErrorBoundary>
 
       {/* Add Student Modal */}
       <Modal

@@ -74,8 +74,8 @@ export function CurriculumTab({ batchId }: CurriculumTabProps) {
         fetchApi<any[]>(API_ROUTES.ADMIN_TESTS).catch(() => []),
         fetchApi<any[]>(`${API_ROUTES.BATCHES}/${batchId}/sessions`).catch(() => []),
       ]);
-      setCategories(cats);
-      setRecordings(recs);
+      setCategories(cats ?? []);
+      setRecordings(Array.isArray(recs) ? recs : []);
       setTests(Array.isArray(testData) ? testData : []);
       setSessions(Array.isArray(sessData) ? sessData : []);
     } catch {
@@ -147,7 +147,7 @@ export function CurriculumTab({ batchId }: CurriculumTabProps) {
 
     if (!source || (source.category === targetCategory && source.index === targetIndex)) return;
 
-    const cat = categories.find((c) => c.category === targetCategory);
+    const cat = (categories ?? []).find((c) => c.category === targetCategory);
     if (!cat) return;
 
     const items = [...cat.items];
@@ -172,7 +172,7 @@ export function CurriculumTab({ batchId }: CurriculumTabProps) {
       setEditingCategory(null);
       return;
     }
-    const cat = categories.find((c) => c.category === oldName);
+    const cat = (categories ?? []).find((c) => c.category === oldName);
     if (!cat) return;
 
     try {
@@ -188,20 +188,20 @@ export function CurriculumTab({ batchId }: CurriculumTabProps) {
     }
   };
 
-  const unusedRecordings = recordings.filter(
-    (r) => !categories.some((c) => c.items.some((i) => i.content_id === r.id && i.content_type === 'recording')),
+  const unusedRecordings = (recordings ?? []).filter(
+    (r) => !(categories ?? []).some((c) => (c.items ?? []).some((i) => i.content_id === r.id && i.content_type === 'recording')),
   );
 
-  const unusedTests = tests.filter(
-    (t: any) => !categories.some((c) => c.items.some((i) => i.content_id === t.id && i.content_type === 'test')),
+  const unusedTests = (tests ?? []).filter(
+    (t: any) => !(categories ?? []).some((c) => (c.items ?? []).some((i) => i.content_id === t.id && i.content_type === 'test')),
   );
 
-  const unusedSessions = sessions.filter(
-    (s: any) => !categories.some((c) => c.items.some((i) => i.content_id === s.id && i.content_type === 'session')),
+  const unusedSessions = (sessions ?? []).filter(
+    (s: any) => !(categories ?? []).some((c) => (c.items ?? []).some((i) => i.content_id === s.id && i.content_type === 'session')),
   );
 
   if (loading) return <p className="text-gray-500">Loading curriculum...</p>;
-  if (error && !categories.length) return <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>;
+  if (error && categories.length === 0) return <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>;
 
   const itemTitle = (item: CurriculumItem) => {
     if (item.content?.title) return item.content.title;
@@ -367,7 +367,7 @@ export function CurriculumTab({ batchId }: CurriculumTabProps) {
                     </span>
                   )}
                 </button>
-                <span className="text-xs font-normal text-gray-500">{cat.items.length} items</span>
+                <span className="text-xs font-normal text-gray-500">{(cat.items ?? []).length} items</span>
               </div>
 
               {!collapsed.has(cat.category) && (
@@ -380,7 +380,7 @@ export function CurriculumTab({ batchId }: CurriculumTabProps) {
                     handleDrop(cat.category, cat.items.length);
                   }}
                 >
-                  {cat.items.map((item, index) => {
+                  {(cat.items ?? []).map((item, index) => {
                     const Icon = contentTypeIcon(item.content_type);
                     return (
                       <li
