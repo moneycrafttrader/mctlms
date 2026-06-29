@@ -53,6 +53,7 @@ export function UploadRecordingModal({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [categoryName, setCategoryName] = useState('General');
   const [moduleName, setModuleName] = useState('');
+  const [displayTitle, setDisplayTitle] = useState('');
   const [isPublished, setIsPublished] = useState(true);
   const [phase, setPhase] = useState<UploadPhase>({ phase: 'idle' });
 
@@ -77,6 +78,7 @@ export function UploadRecordingModal({
       setDropdownOpen(false);
       setCategoryName('General');
       setModuleName('');
+      setDisplayTitle('');
       setIsPublished(true);
       setPhase({ phase: 'idle' });
       fetchBatches();
@@ -118,6 +120,7 @@ export function UploadRecordingModal({
           categoryName: categoryName.trim() || undefined,
           moduleName: moduleName.trim() || undefined,
           isPublished,
+          titleOverride: displayTitle.trim() || undefined,
         },
       );
 
@@ -338,6 +341,22 @@ export function UploadRecordingModal({
               placeholder="e.g. Core Concepts"
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-100"
             />
+          </div>
+
+          {/* Display Title */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">
+              Display Title <span className="text-xs text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={displayTitle}
+              onChange={(e) => setDisplayTitle(e.target.value)}
+              disabled={isSubmitting}
+              placeholder="Leave blank to use the recording title"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-100"
+            />
+            <p className="mt-1 text-xs text-gray-400">Per-batch override. Curriculum shows this title instead of the recording title.</p>
           </div>
 
           {/* Publish toggle */}

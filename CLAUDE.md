@@ -9,6 +9,8 @@ Trading education platform (Money Craft Trader). Students are retail traders / w
 - `cd apps/web && npx tsc --noEmit` — TypeScript check frontend
 - `cd apps/api && nest start --watch` — Dev API server
 - `cd apps/web && next dev` — Dev web server
+- `cd apps/api && pnpm test` — Run API Jest tests (9 passing)
+- `cd apps/api && pnpm test:watch` — Watch mode
 
 ## Monorepo Structure
 ```
@@ -33,6 +35,7 @@ lms-platform/
 - **Resend** — Email delivery (SMTP replaced, HTTPS port 443)
 - **Auth** — JWT (sub, sessionId, role) + Redis session store, rate-limited login
 - **ResponseTransformInterceptor** — Wraps all responses in `{ success, data }`
+- **Jest** — Test infrastructure: `jest.config.ts`, `ts-jest`, `@nestjs/testing`, `supertest` available
 
 ### Frontend (`apps/web`)
 - **Next.js 14** — App Router, RSC + client components
@@ -42,6 +45,52 @@ lms-platform/
 - **Supabase SSR** — `lib/supabase/server.ts` for server component auth
 - **Lucide React** — Icons
 - **Mux Player** — `@mux/mux-player-react` for video playback
+
+## Critical Architecture (DO NOT REGRESS)
+
+### Zoom Webhook — `POST /zoom/webhook`
+- **MUST be `@Public()`** to bypass the global LMS `JwtAuthGuard`. Zoom cannot send JWTs.
+- **MUST use `@Res() res: Response`** to manually `res.json()` responses. This bypasses `ResponseTransformInterceptor` which would wrap Zoom-required payloads (e.g., `{ plainToken, encryptedToken }` for `endpoint.url_validation`). Zoom requires this exact un-wrapped structure.
+
+### Destruction Pipeline
+- Deleting a session: `ZoomService.deleteWebinar` in try/catch (continue on Zoom 404) → delete `session_batch_mappings` → delete `sessions` row.
+- Deleting a recording: delete from `batch_recording_curriculum` (where `content_id = id AND content_type = 'recording'`) → delete Mux asset → delete `recordings` row.
+- Always delete child/mapping rows before parent rows to avoid FK constraint errors.
+
+### Bulk Uploads (CSV)
+- Backend: `@UseInterceptors(FileInterceptor('file'))` for multipart/form-data.
+- Frontend: When sending `FormData`, **omit `Content-Type` header** — let the browser set `multipart/form-data; boundary=...`.
+- `GET /bulk-upload/template` is `@Public()`, sends raw CSV string with `Content-Disposition: attachment`.
+
+### Recording Authorization
+- **Single source of truth:** `recording_batches` table only. The `batch_recording_curriculum` table is for curriculum display and progress calculation only — never for access control.
+- `validateAccess()` in `recordings.service.ts:495` gates all student-facing recording access via `recording_batches`. No curriculum fallback exists.
+
+### Curriculum Synchronization (batch_recording_curriculum)
+Every recording mutation must keep `batch_recording_curriculum` in sync:
+- `assignToBatches()` — inserts curriculum entries with defaults after inserting into `recording_batches`
+- `removeBatchAccess()` — deletes curriculum entries after deleting from `recording_batches`
+- `deleteRecording()` — deletes curriculum entries (before recording deletion)
+- `createRecordingWithUpload()` — calls `autoCreateCurriculumEntries()` after recording_batches upsert
+
+### Mux Webhook — `POST /mux/webhook`
+- **MUST be `@Public()`** (Mux cannot send JWTs).
+- Verifies signature against `req.rawBody` (preserved by `rawBody: true` in `main.ts`).
+- Always returns 200 — never throws to Mux or it will retry.
+- Handles: `video.upload.asset_created` (links upload to asset), `video.asset.ready` (marks recording ready), `video.asset.errored` (marks error), `video.asset.deleted` (removes orphan rows).
+- Unhandled event types logged at `debug` level (not warn) — intermediate events like `video.upload.created` and `video.asset.created` are expected and need no action.
+
+### Reconciliation Service
+- `RecordingCurriculumReconciliationService` detects and repairs drift between `recording_batches` and `batch_recording_curriculum`.
+- Dry-run mode for production safety (`dryRun=true` returns diff without mutations).
+- Accessible via `POST /admin/reconciliation/curriculum?dryRun=true` (admin-only).
+- Detects: missing curriculum entries (exist in recording_batches, not in curriculum → inserts) and orphan entries (exist in curriculum, not in recording_batches → deletes).
+
+### E2E Testing Pattern
+- Uses NestJS `Test.createTestingModule` with `supertest`.
+- External APIs (ZoomService) strictly mocked via `.overrideProvider()`.
+- Tests are stateful (capture `createdSessionId` in POST → reuse in DELETE).
+- Global `afterAll` hook queries Supabase directly to delete orphaned test rows if a test fails mid-execution.
 
 ## Design System
 
@@ -140,3 +189,4 @@ components/
 - `cn()` from `lib/utils.ts` for conditional Tailwind classes
 - Icons from `lucide-react`
 - Do NOT double-unwrap API responses — `fetchApi` already handles `ResponseTransformInterceptor`
+- Two-step validation: always delete child/mapping rows before parent rows

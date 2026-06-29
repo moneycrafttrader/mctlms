@@ -9,6 +9,7 @@ export interface CreateRecordingData {
   categoryName?: string;
   moduleName?: string;
   isPublished?: boolean;
+  titleOverride?: string;
 }
 
 export interface Recording {

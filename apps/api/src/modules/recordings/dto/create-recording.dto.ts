@@ -37,4 +37,8 @@ export class CreateRecordingDto {
   @IsBoolean()
   @IsOptional()
   isPublished?: boolean;
+
+  @IsString()
+  @IsOptional()
+  titleOverride?: string;
 }

@@ -12,7 +12,7 @@
  * A junior should know:
  *   - main.ts passes rawBody: true to preserve the raw request buffer.
  *   - Three event types are handled: video.upload.asset_created, video.asset.ready,
- *     and video.asset.errored. Unknown events are logged as warnings.
+ *     and video.asset.errored. Unknown events are logged at debug level.
  *   - Every database operation has its own try/catch with full error logging.
  */
 import { Controller, Post, Req, Logger } from '@nestjs/common';
@@ -178,7 +178,7 @@ export class MuxController {
       }
 
       default:
-        this.logger.warn(`Unhandled Mux event type: ${event.type}`);
+        this.logger.debug(`Unhandled Mux event type: ${event.type}`);
     }
 
     return { message: 'ok' };

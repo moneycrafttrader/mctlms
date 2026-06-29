@@ -19,6 +19,7 @@ import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateRecordingDto } from './dto/create-recording.dto';
 import { CreateTopicDto } from '../videos/dto/create-topic.dto';
 import { RequestUploadDto } from '../videos/dto/request-upload.dto';
+import { UpdateBatchCurriculumDto, BatchCurriculumAssignment } from './dto/update-batch-curriculum.dto';
 import { UpdateRecordingDto } from './dto/update-recording.dto';
 import { UpdateVideoProgressDto } from '../videos/dto/update-video-progress.dto';
 
@@ -275,6 +276,26 @@ export class RecordingsService {
       throw new BadRequestException('Failed to assign recording to batches');
     }
 
+    // Sync curriculum entries for consistency
+    const curriculumEntries = batchIds.map((batchId) => ({
+      batch_id: batchId,
+      content_id: recordingId,
+      content_type: 'recording',
+      category_name: 'General',
+      module_name: null,
+      title_override: null,
+      sort_order: 0,
+      is_published: true,
+    }));
+
+    const { error: curriculumError } = await this.supabaseService.client
+      .from(TABLES.BATCH_RECORDING_CURRICULUM)
+      .upsert(curriculumEntries, { onConflict: 'batch_id,content_id,content_type' });
+
+    if (curriculumError) {
+      this.logger.warn(`Failed to sync curriculum entries for recording ${recordingId}: ${curriculumError.message}`);
+    }
+
     return { assignedCount: batchIds.length };
   }
 
@@ -290,7 +311,103 @@ export class RecordingsService {
       throw new BadRequestException('Failed to remove batch access');
     }
 
+    // Remove curriculum entries for consistency
+    const { error: curriculumError } = await this.supabaseService.client
+      .from(TABLES.BATCH_RECORDING_CURRICULUM)
+      .delete()
+      .eq('content_id', recordingId)
+      .eq('content_type', 'recording')
+      .in('batch_id', batchIds);
+
+    if (curriculumError) {
+      this.logger.warn(`Failed to remove curriculum entries for recording ${recordingId}: ${curriculumError.message}`);
+    }
+
     return { removedCount: batchIds.length };
+  }
+
+  // ── Batch Curriculum (per-batch metadata) ─────────────────
+
+  async updateBatchCurriculum(recordingId: string, dto: UpdateBatchCurriculumDto) {
+    const addBatches: string[] = [];
+    const removeBatches: string[] = [];
+
+    for (const a of dto.assignments) {
+      if (a.assigned === false) {
+        removeBatches.push(a.batchId);
+      } else {
+        addBatches.push(a.batchId);
+      }
+    }
+
+    if (addBatches.length > 0) {
+      const records = addBatches.map((batchId) => ({
+        recording_id: recordingId,
+        batch_id: batchId,
+      }));
+
+      const { error: linkError } = await this.supabaseService.client
+        .from(TABLES.RECORDING_BATCHES)
+        .upsert(records, { onConflict: 'recording_id,batch_id' });
+
+      if (linkError) {
+        this.logger.error(`Failed to add batch links: ${linkError.message}`);
+        throw new BadRequestException('Failed to update batch assignments');
+      }
+
+      const assignmentMap = new Map<string, BatchCurriculumAssignment>();
+      for (const a of dto.assignments) {
+        if (a.assigned !== false) assignmentMap.set(a.batchId, a);
+      }
+
+      const curriculumEntries = addBatches.map((batchId) => {
+        const meta = assignmentMap.get(batchId);
+        return {
+          batch_id: batchId,
+          content_id: recordingId,
+          content_type: 'recording',
+          category_name: meta?.sectionName ?? 'General',
+          sort_order: meta?.sortOrder ?? 0,
+          is_published: meta?.isVisible ?? true,
+          module_name: null,
+          title_override: null,
+        };
+      });
+
+      const { error: curriculumError } = await this.supabaseService.client
+        .from(TABLES.BATCH_RECORDING_CURRICULUM)
+        .upsert(curriculumEntries, { onConflict: 'batch_id,content_id,content_type' });
+
+      if (curriculumError) {
+        this.logger.warn(`Failed to sync curriculum: ${curriculumError.message}`);
+      }
+    }
+
+    if (removeBatches.length > 0) {
+      const { error: curriculumError } = await this.supabaseService.client
+        .from(TABLES.BATCH_RECORDING_CURRICULUM)
+        .delete()
+        .eq('content_id', recordingId)
+        .eq('content_type', 'recording')
+        .in('batch_id', removeBatches);
+
+      if (curriculumError) {
+        this.logger.warn(`Failed to remove curriculum: ${curriculumError.message}`);
+      }
+
+      const { error: linkError } = await this.supabaseService.client
+        .from(TABLES.RECORDING_BATCHES)
+        .delete()
+        .eq('recording_id', recordingId)
+        .in('batch_id', removeBatches);
+
+      if (linkError) {
+        this.logger.error(`Failed to remove batch links: ${linkError.message}`);
+        throw new BadRequestException('Failed to update batch assignments');
+      }
+    }
+
+    return { updated: true };
   }
 
   // ── Update / Delete ───────────────────────────────────────
@@ -334,6 +451,12 @@ export class RecordingsService {
     if (recording.mux_asset_id) {
       await this.muxService.deleteAsset(recording.mux_asset_id);
     }
+
+    await this.supabaseService.client
+      .from(TABLES.BATCH_RECORDING_CURRICULUM)
+      .delete()
+      .eq('content_id', id)
+      .eq('content_type', 'recording');
 
     const { error } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
@@ -452,6 +575,148 @@ export class RecordingsService {
     }));
   }
 
+  // ── Student: grouped recordings by batch → section ────────
+
+  async getMyRecordingsGrouped(userId: string) {
+    const { data: batchMemberships } = await this.supabaseService.client
+      .from(TABLES.BATCH_STUDENTS)
+      .select('batch_id')
+      .eq('user_id', userId);
+
+    const userBatchIds = (batchMemberships ?? []).map((b: any) => b.batch_id);
+    if (userBatchIds.length === 0) return [];
+
+    const { data: batches } = await this.supabaseService.client
+      .from(TABLES.BATCHES)
+      .select('id, name')
+      .in('id', userBatchIds);
+
+    const batchMap = new Map((batches ?? []).map((b: any) => [b.id, b.name]));
+
+    const { data: accessRecords } = await this.supabaseService.client
+      .from(TABLES.RECORDING_BATCHES)
+      .select('recording_id, batch_id')
+      .in('batch_id', userBatchIds);
+
+    const recordingIds = [...new Set((accessRecords ?? []).map((r: any) => r.recording_id))];
+    if (recordingIds.length === 0) return [];
+
+    const { data: recordings } = await this.supabaseService.client
+      .from(TABLES.RECORDINGS)
+      .select('id, title, description, mux_playback_id, duration_seconds, sort_order, status, created_at')
+      .in('id', recordingIds)
+      .eq('status', 'ready')
+      .order('sort_order', { ascending: true });
+
+    if (!recordings || recordings.length === 0) return [];
+
+    const recordingIdList = recordings.map((r: any) => r.id);
+
+    const { data: curriculum } = await this.supabaseService.client
+      .from(TABLES.BATCH_RECORDING_CURRICULUM)
+      .select('batch_id, content_id, category_name, sort_order, is_published, title_override')
+      .eq('content_type', 'recording')
+      .in('content_id', recordingIdList)
+      .in('batch_id', userBatchIds)
+      .eq('is_published', true);
+
+    const { data: progress } = await this.supabaseService.client
+      .from(TABLES.VIDEO_PROGRESS)
+      .select('video_id, watched_seconds, completed, last_watched_at')
+      .in('video_id', recordingIdList)
+      .eq('user_id', userId);
+
+    const progressMap = new Map(
+      (progress ?? []).map((p: any) => [p.video_id, p]),
+    );
+
+    const curriculumByBatch = new Map<string, Map<string, any[]>>();
+    for (const c of curriculum ?? []) {
+      const bId = (c as any).batch_id;
+      const section = (c as any).category_name ?? 'Uncategorized';
+      if (!curriculumByBatch.has(bId)) {
+        curriculumByBatch.set(bId, new Map());
+      }
+      const sections = curriculumByBatch.get(bId)!;
+      if (!sections.has(section)) {
+        sections.set(section, []);
+      }
+      sections.get(section)!.push(c);
+    }
+
+    const accessByRecording = new Map<string, Set<string>>();
+    for (const a of accessRecords ?? []) {
+      const recId = (a as any).recording_id;
+      if (!accessByRecording.has(recId)) {
+        accessByRecording.set(recId, new Set());
+      }
+      accessByRecording.get(recId)!.add((a as any).batch_id);
+    }
+
+    const result: any[] = [];
+    for (const batchId of userBatchIds) {
+      const batchName = batchMap.get(batchId) ?? 'Unknown Batch';
+      const sections = curriculumByBatch.get(batchId);
+
+      const recordingsInBatch = (accessRecords ?? [])
+        .filter((a: any) => a.batch_id === batchId)
+        .map((a: any) => a.recording_id);
+
+      if (sections) {
+        const sectionArr: any[] = [];
+        for (const [sectionName, items] of sections) {
+          const recordingsInSection = items
+            .map((item: any) => {
+              const rec = recordings.find((r: any) => r.id === item.content_id);
+              if (!rec || !recordingsInBatch.includes(rec.id)) return null;
+              const prog = progressMap.get(rec.id);
+              return {
+                id: rec.id,
+                title: item.title_override ?? rec.title,
+                description: rec.description,
+                muxPlaybackId: rec.mux_playback_id,
+                durationSeconds: rec.duration_seconds,
+                sortOrder: item.sort_order ?? rec.sort_order,
+                createdAt: rec.created_at,
+                progress: prog
+                  ? { watchedSeconds: prog.watched_seconds, completed: prog.completed, lastWatchedAt: prog.last_watched_at }
+                  : { watchedSeconds: 0, completed: false, lastWatchedAt: null },
+              };
+            })
+            .filter(Boolean);
+          if (recordingsInSection.length > 0) {
+            sectionArr.push({ sectionName, recordings: recordingsInSection });
+          }
+        }
+        sectionArr.sort((a, b) => a.sectionName?.localeCompare(b.sectionName ?? '') ?? 0);
+        result.push({ batchId, batchName, sections: sectionArr });
+      } else {
+        const uncategorized = recordings
+          .filter((r: any) => recordingsInBatch.includes(r.id))
+          .map((r: any) => {
+            const prog = progressMap.get(r.id);
+            return {
+              id: r.id,
+              title: r.title,
+              description: r.description,
+              muxPlaybackId: r.mux_playback_id,
+              durationSeconds: r.duration_seconds,
+              sortOrder: r.sort_order,
+              createdAt: r.created_at,
+              progress: prog
+                ? { watchedSeconds: prog.watched_seconds, completed: prog.completed, lastWatchedAt: prog.last_watched_at }
+                : { watchedSeconds: 0, completed: false, lastWatchedAt: null },
+            };
+          });
+        if (uncategorized.length > 0) {
+          result.push({ batchId, batchName, sections: [{ sectionName: null, recordings: uncategorized }] });
+        }
+      }
+    }
+
+    return result;
+  }
+
   // ── Playback ──────────────────────────────────────────────
 
   private async validateAccess(recordingId: string, userId: string): Promise<void> {
@@ -471,18 +736,34 @@ export class RecordingsService {
 
     const userBatchIds = (userBatches ?? []).map((b: any) => b.batch_id);
     if (userBatchIds.length === 0) {
+      this.logger.warn(`validateAccess: user ${userId} has no batch assignments`);
       throw new ForbiddenException('You do not have access to this recording');
     }
 
+    this.logger.debug('validateAccess', {
+      recordingId,
+      userId,
+      userBatchIds,
+    });
+
+    // Check primary access via recording_batches
     const { data: accessRecords } = await this.supabaseService.client
       .from(TABLES.RECORDING_BATCHES)
       .select('batch_id')
       .eq('recording_id', recordingId)
       .in('batch_id', userBatchIds);
 
-    if (!accessRecords || accessRecords.length === 0) {
-      throw new ForbiddenException('You do not have access to this recording');
+    if (accessRecords && accessRecords.length > 0) {
+      this.logger.debug('validateAccess: access granted via recording_batches', {
+        recordingId, userId, matchedBatchIds: accessRecords.map((r: any) => r.batch_id),
+      });
+      return;
     }
+
+    this.logger.warn('validateAccess: access DENIED', {
+      recordingId, userId, userBatchIds,
+    });
+    throw new ForbiddenException('You do not have access to this recording');
   }
 
   async authorizePlayback(recordingId: string, userId: string, deviceId?: string, ip?: string) {
@@ -596,6 +877,7 @@ export class RecordingsService {
       content_type: 'recording',
       category_name: categoryName,
       module_name: moduleName,
+      title_override: dto.titleOverride ?? null,
       sort_order: 0,
       is_published: isPublished,
     }));

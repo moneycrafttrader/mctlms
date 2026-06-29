@@ -17,6 +17,7 @@ import { UpdateRecordingDto } from './dto/update-recording.dto';
 import { CreateTopicDto } from '../videos/dto/create-topic.dto';
 import { RequestUploadDto } from '../videos/dto/request-upload.dto';
 import { UpdateVideoProgressDto } from '../videos/dto/update-video-progress.dto';
+import { UpdateBatchCurriculumDto } from './dto/update-batch-curriculum.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -97,6 +98,15 @@ export class RecordingsController {
   }
 
   @Roles(UserRole.ADMIN)
+  @Patch('admin/recordings/:id/batch-curriculum')
+  updateBatchCurriculum(
+    @Param('id') id: string,
+    @Body() dto: UpdateBatchCurriculumDto,
+  ) {
+    return this.recordingsService.updateBatchCurriculum(id, dto);
+  }
+
+  @Roles(UserRole.ADMIN)
   @Post('admin/upload-url')
   requestUploadUrl(@Body() dto: RequestUploadDto) {
     return this.recordingsService.requestUploadUrl(dto);
@@ -137,6 +147,12 @@ export class RecordingsController {
     @Query('topicId') topicId?: string,
   ) {
     return this.recordingsService.getRecordingsForStudent(user.id, topicId);
+  }
+
+  @Roles(UserRole.STUDENT)
+  @Get('recordings/my/grouped')
+  getMyRecordingsGrouped(@CurrentUser() user: { id: string }) {
+    return this.recordingsService.getMyRecordingsGrouped(user.id);
   }
 
   @Roles(UserRole.STUDENT)
@@ -267,6 +283,11 @@ export class RecordingsController {
     @Query('topicId') topicId?: string,
   ) {
     return this.recordingsService.getRecordingsForStudent(user.id, topicId);
+  }
+
+  @Get('videos/my/grouped')
+  legacyGetMyVideosGrouped(@CurrentUser() user: { id: string }) {
+    return this.recordingsService.getMyRecordingsGrouped(user.id);
   }
 
   @Post('videos/:id/authorize')

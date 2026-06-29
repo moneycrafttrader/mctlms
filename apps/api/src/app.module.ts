@@ -51,6 +51,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { EvaluationModule } from './modules/evaluation/evaluation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
+import { RecordingCurriculumReconciliationModule } from './modules/recordings/reconciliation/recording-curriculum-reconciliation.module';
 import { ResultsModule } from './modules/results/results.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
@@ -116,6 +117,7 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     BatchesModule,
     LiveSessionsModule,
     RecordingsModule,
+    RecordingCurriculumReconciliationModule,
     TradingSessionsModule,
     AttendanceModule,
     EmailModule,

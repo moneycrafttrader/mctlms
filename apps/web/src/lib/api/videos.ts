@@ -59,6 +59,34 @@ export interface PlaybackResponse {
   expiresAt: string;
 }
 
+export interface GroupedRecordingProgress {
+  watchedSeconds: number;
+  completed: boolean;
+  lastWatchedAt: string | null;
+}
+
+export interface GroupedRecording {
+  id: string;
+  title: string;
+  description?: string;
+  muxPlaybackId?: string;
+  durationSeconds?: number;
+  sortOrder: number;
+  createdAt: string;
+  progress: GroupedRecordingProgress;
+}
+
+export interface StudentSection {
+  sectionName: string | null;
+  recordings: GroupedRecording[];
+}
+
+export interface StudentBatchRecordings {
+  batchId: string;
+  batchName: string;
+  sections: StudentSection[];
+}
+
 export async function getAdminVideos(
   params?: { topicId?: string; page?: number; limit?: number },
 ) {
@@ -102,6 +130,10 @@ export async function deleteVideo(videoId: string) {
 export async function getMyVideos(topicId?: string) {
   const params = topicId ? `?topicId=${topicId}` : '';
   return fetchApi<StudentVideo[]>(`${API_ROUTES.RECORDINGS}/my${params}`);
+}
+
+export async function getMyVideosGrouped() {
+  return fetchApi<StudentBatchRecordings[]>(`${API_ROUTES.RECORDINGS}/my/grouped`);
 }
 
 export async function getVideoPlaybackUrl(videoId: string) {

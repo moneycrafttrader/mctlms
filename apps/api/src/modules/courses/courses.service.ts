@@ -103,16 +103,14 @@ export class CoursesService {
       const batchIds = batches.map((b: any) => b.id);
 
       if (batchIds.length > 0) {
-        const { data: enrol } = await this.supabaseService.client
+        const { data: enrolRows } = await this.supabaseService.client
           .from(TABLES.BATCH_STUDENTS)
           .select('batch_id')
           .eq('user_id', currentUser.id)
-          .in('batch_id', batchIds)
-          .maybeSingle();
+          .in('batch_id', batchIds);
 
-        (data as any).enrolledBatches = enrol
-          ? batches.filter((b: any) => b.id === enrol.batch_id)
-          : [];
+        const enrolledBatchIds = new Set((enrolRows ?? []).map((r: any) => r.batch_id));
+        (data as any).enrolledBatches = batches.filter((b: any) => enrolledBatchIds.has(b.id));
       } else {
         (data as any).enrolledBatches = [];
       }

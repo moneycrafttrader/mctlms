@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { PlayCircle, Clock, Film } from 'lucide-react';
-import type { BatchVideo } from '@/lib/api/videos';
+import type { GroupedRecording } from '@/lib/api/videos';
 
 interface Props {
-  videos: BatchVideo[];
+  videos: GroupedRecording[];
 }
 
 function formatDate(iso: string) {
@@ -53,12 +53,12 @@ export function CourseDetailRecordings({ videos }: Props) {
               </p>
               <div className="mt-0.5 flex items-center gap-2 text-xs text-text-muted">
                 <span>{formatDate(video.createdAt)}</span>
-                {video.duration ? (
+                {video.durationSeconds ? (
                   <>
                     <span>·</span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {Math.floor(video.duration / 60)}m
+                      {Math.floor(video.durationSeconds / 60)}m
                     </span>
                   </>
                 ) : null}

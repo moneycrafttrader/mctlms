@@ -1,6 +1,6 @@
 import { getStudentCourse } from '@/lib/api/courses';
 import { getMySessions } from '@/lib/api/live-sessions';
-import { getBatchVideos } from '@/lib/api/videos';
+import { getMyVideosGrouped, type StudentBatchRecordings } from '@/lib/api/videos';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { CourseDetailSessions } from './course-detail-sessions';
 import { CourseDetailRecordings } from './course-detail-recordings';
@@ -20,11 +20,11 @@ export default async function StudentCourseDetailPage({ params }: Props) {
       return <AccessDenied />;
     }
 
-    const batch = enrolledBatches[0];
+    const batchIds = enrolledBatches.map((b: any) => b.id);
 
-    const [sessionsResult, videos] = await Promise.all([
+    const [sessionsResult, groupedRecordings] = await Promise.all([
       getMySessions(),
-      getBatchVideos(batch.id),
+      getMyVideosGrouped(),
     ]);
 
     const allSessions = [
@@ -45,6 +45,10 @@ export default async function StudentCourseDetailPage({ params }: Props) {
         (a, b) =>
           new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
       );
+
+    const recordingsForCourse = groupedRecordings.filter((br) =>
+      batchIds.includes(br.batchId),
+    );
 
     return (
       <div>
@@ -73,7 +77,23 @@ export default async function StudentCourseDetailPage({ params }: Props) {
             past={pastSessions}
           />
 
-          <CourseDetailRecordings videos={videos} />
+          {recordingsForCourse.map((batch) => (
+            <div key={batch.batchId}>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                {batch.batchName} Recordings
+              </h3>
+              {batch.sections.map((section) => (
+                <div key={section.sectionName ?? '__uncategorized__'} className="mb-3">
+                  {section.sectionName && (
+                    <p className="mb-1.5 text-xs font-medium text-text-secondary">
+                      {section.sectionName}
+                    </p>
+                  )}
+                  <CourseDetailRecordings videos={section.recordings as any} />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     );
