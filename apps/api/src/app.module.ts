@@ -60,6 +60,7 @@ import { AppController } from './app.controller';
 
 // ── Common providers ─────────────────────────────────────────
 import { SupabaseService } from './common/services/supabase.service';
+import { RedisCacheService } from './common/services/redis-cache.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -145,10 +146,12 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
   controllers: [AppController],
   exports: [
     SupabaseService,
+    RedisCacheService,
   ],
   providers: [
     // ── Singleton services ────────────────────────────────────
     SupabaseService,
+    RedisCacheService,
     RecordingUploadJob,
 
     // ── Global guards ─────────────────────────────────────────

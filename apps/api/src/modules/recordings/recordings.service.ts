@@ -12,9 +12,10 @@ import { SupabaseService } from '../../common/services/supabase.service';
 import { MuxService } from '../mux/mux.service';
 import { PlaybackGuardService } from '../playback/playback-guard.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { RedisCacheService } from '../../common/services/redis-cache.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constant';
-import { Transaction } from '../../common/utils/transaction.util';
+import { Transaction, TransactionStep } from '../../common/utils/transaction.util';
 import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateRecordingDto } from './dto/create-recording.dto';
 import { CreateTopicDto } from '../videos/dto/create-topic.dto';
@@ -33,6 +34,7 @@ export class RecordingsService {
     private readonly muxService: MuxService,
     private readonly playbackGuard: PlaybackGuardService,
     private readonly observabilityService: ObservabilityService,
+    private readonly redisCache: RedisCacheService,
     redisService: RedisService,
   ) {
     this.redis = redisService.getOrThrow();
@@ -142,6 +144,8 @@ export class RecordingsService {
       { title: dto.title, batchIds: dto.batchIds },
     ).catch(() => {});
 
+    await this.redisCache.invalidateRecordingsCache();
+
     return {
       ...recording,
       batchIds: dto.batchIds,
@@ -200,40 +204,84 @@ export class RecordingsService {
       '',
     );
 
-    const { data: recording, error } = await this.supabaseService.client
-      .from(TABLES.RECORDINGS)
-      .insert({
-        title: dto.title,
-        description: dto.description ?? null,
-        mux_upload_id: uploadId,
-        status: 'processing',
-      })
-      .select()
-      .single();
+    let recordingRow: Record<string, any> | null = null;
 
-    if (error) {
-      this.logger.error(`Failed to create recording: ${error.message}`);
-      throw new BadRequestException('Failed to create recording');
-    }
+    const steps: TransactionStep[] = [
+      {
+        name: 'insert-recording',
+        execute: async () => {
+          const { data: recording, error } = await this.supabaseService.client
+            .from(TABLES.RECORDINGS)
+            .insert({
+              title: dto.title,
+              description: dto.description ?? null,
+              mux_upload_id: uploadId,
+              status: 'processing',
+            })
+            .select()
+            .single();
 
-    if (dto.batchIds && dto.batchIds.length > 0) {
-      const batchRecords = dto.batchIds.map((batchId) => ({
-        recording_id: recording.id,
-        batch_id: batchId,
-      }));
+          if (error || !recording) {
+            throw new BadRequestException(`Failed to create recording: ${error?.message}`);
+          }
+          recordingRow = recording;
+        },
+        rollback: async () => {
+          if (recordingRow) {
+            await this.supabaseService.client
+              .from(TABLES.RECORDINGS)
+              .delete()
+              .eq('id', recordingRow.id);
+          }
+        },
+      },
+      {
+        name: 'insert-batch-links',
+        execute: async () => {
+          const batchRecords = dto.batchIds.map((batchId) => ({
+            recording_id: recordingRow!.id,
+            batch_id: batchId,
+          }));
 
-      const { error: linkError } = await this.supabaseService.client
-        .from(TABLES.RECORDING_BATCHES)
-        .upsert(batchRecords, { onConflict: 'recording_id,batch_id' });
+          const { error: linkError } = await this.supabaseService.client
+            .from(TABLES.RECORDING_BATCHES)
+            .upsert(batchRecords, { onConflict: 'recording_id,batch_id' });
 
-      if (linkError) {
-        this.logger.error(`Failed to link recording to batches: ${linkError.message}`);
-      }
+          if (linkError) {
+            throw new BadRequestException(`Failed to link recording to batches: ${linkError.message}`);
+          }
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.RECORDING_BATCHES)
+            .delete()
+            .eq('recording_id', recordingRow!.id);
+        },
+      },
+      {
+        name: 'insert-curriculum',
+        execute: async () => {
+          await this.autoCreateCurriculumEntries(recordingRow!.id, dto);
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.BATCH_RECORDING_CURRICULUM)
+            .delete()
+            .eq('content_id', recordingRow!.id)
+            .eq('content_type', 'recording');
+        },
+      },
+    ];
 
-      await this.autoCreateCurriculumEntries(recording.id, dto);
-    }
+    const tx = new Transaction();
+    await tx.run(steps);
 
-    return { recording, uploadUrl };
+    await this.redisCache.invalidateRecordingsCache();
+
+    return {
+      recording: recordingRow,
+      uploadUrl,
+    };
   }
 
   // ── Mux Upload URL ────────────────────────────────────────
@@ -296,6 +344,8 @@ export class RecordingsService {
       this.logger.warn(`Failed to sync curriculum entries for recording ${recordingId}: ${curriculumError.message}`);
     }
 
+    await this.redisCache.invalidateRecordingsCache();
+
     return { assignedCount: batchIds.length };
   }
 
@@ -322,6 +372,8 @@ export class RecordingsService {
     if (curriculumError) {
       this.logger.warn(`Failed to remove curriculum entries for recording ${recordingId}: ${curriculumError.message}`);
     }
+
+    await this.redisCache.invalidateRecordingsCache();
 
     return { removedCount: batchIds.length };
   }
@@ -407,6 +459,8 @@ export class RecordingsService {
       }
     }
 
+    await this.redisCache.invalidateRecordingsCache();
+
     return { updated: true };
   }
 
@@ -477,6 +531,8 @@ export class RecordingsService {
       { title: recording.title },
     ).catch(() => {});
 
+    await this.redisCache.invalidateRecordingsCache();
+
     return { deleted: true };
   }
 
@@ -513,6 +569,13 @@ export class RecordingsService {
   // ── Student: accessible recordings ────────────────────────
 
   async getRecordingsForStudent(userId: string, topicId?: string) {
+    const cacheKey = this.redisCache.key('recordings', 'flat', userId, topicId ?? 'all');
+    return this.redisCache.wrap(cacheKey, 300, async () => {
+      return this.fetchRecordingsForStudent(userId, topicId);
+    });
+  }
+
+  private async fetchRecordingsForStudent(userId: string, topicId?: string) {
     const { data: batchMemberships } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
       .select('batch_id')
@@ -578,6 +641,13 @@ export class RecordingsService {
   // ── Student: grouped recordings by batch → section ────────
 
   async getMyRecordingsGrouped(userId: string) {
+    const cacheKey = this.redisCache.key('recordings', 'grouped', userId);
+    return this.redisCache.wrap(cacheKey, 300, async () => {
+      return this.fetchMyRecordingsGrouped(userId);
+    });
+  }
+
+  private async fetchMyRecordingsGrouped(userId: string) {
     const { data: batchMemberships } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
       .select('batch_id')

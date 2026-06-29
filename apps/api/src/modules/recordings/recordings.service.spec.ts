@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { RecordingsService } from './recordings.service';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { RedisCacheService } from '../../common/services/redis-cache.service';
 import { MuxService } from '../mux/mux.service';
 import { PlaybackGuardService } from '../playback/playback-guard.service';
 import { ObservabilityService } from '../observability/observability.service';
@@ -131,6 +132,7 @@ describe('RecordingsService', () => {
             }),
           },
         },
+        RedisCacheService,
       ],
     }).compile();
 

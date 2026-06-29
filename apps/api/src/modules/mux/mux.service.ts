@@ -158,19 +158,46 @@ export class MuxService {
    * Steps:
    *   1. Update TABLES.RECORDINGS with status 'ready' and duration
    */
-  async handleAssetReady(muxAssetId: string, durationSeconds: number): Promise<void> {
+  async handleAssetReady(muxAssetId: string, durationSeconds: number, playbackId?: string): Promise<void> {
+    const { data: recording } = await this.supabaseService.client
+      .from(TABLES.RECORDINGS)
+      .select('id, mux_playback_id')
+      .eq('mux_asset_id', muxAssetId)
+      .maybeSingle();
+
+    if (!recording) {
+      this.logger.warn(`No recording found for Mux asset ${muxAssetId} — skipping`);
+      return;
+    }
+
+    const updates: Record<string, any> = {
+      status: 'ready',
+      duration_seconds: durationSeconds,
+    };
+
+    if (playbackId && !recording.mux_playback_id) {
+      updates.mux_playback_id = playbackId;
+    } else if (!recording.mux_playback_id) {
+      try {
+        const asset = await this.muxClient.video.assets.retrieve(muxAssetId);
+        const pbId = (asset.playback_ids as any[])?.[0]?.id;
+        if (pbId) {
+          updates.mux_playback_id = pbId;
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to fetch asset ${muxAssetId} from Mux API: ${(err as Error).message}`);
+      }
+    }
+
     const { error } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
-      .update({
-        status: 'ready',
-        duration_seconds: durationSeconds,
-      })
-      .eq('mux_asset_id', muxAssetId);
+      .update(updates)
+      .eq('id', recording.id);
 
     if (error) {
-      this.logger.error(`Failed to update RECORDINGS for asset ${muxAssetId}: ${error.message}`, error.stack);
+      this.logger.error(`Failed to update RECORDINGS for recording ${recording.id}: ${error.message}`, error.stack);
     } else {
-      this.logger.log(`Asset ${muxAssetId} is ready (${durationSeconds}s)`);
+      this.logger.log(`Recording ${recording.id} is ready (${durationSeconds}s, playbackId=${updates.mux_playback_id ?? recording.mux_playback_id ?? 'none'})`);
     }
   }
 

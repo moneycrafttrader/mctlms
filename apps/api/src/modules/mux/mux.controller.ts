@@ -111,12 +111,15 @@ export class MuxController {
       }
 
       // ── video.asset.ready ──────────────────────────────────
-      // Mux finished processing a video asset — update status to 'ready'.
+      // Mux finished processing a video asset — update status to 'ready'
+      // and ensure mux_playback_id is set (may not have been in asset_created).
       case 'video.asset.ready': {
         const assetId = event.object?.id;
         // Mux sends duration as a decimal string/float (e.g. "23.285389"),
         // but the DB stores int4.  Force round to integer at the boundary.
         const durationSeconds = Math.round(Number(event.data?.duration ?? 0));
+        // playback_ids are guaranteed on asset.ready (may be empty on asset_created)
+        const playbackId = (event.data?.playback_ids as any)?.[0]?.id ?? undefined;
 
         if (!assetId) {
           this.logger.warn('video.asset.ready missing assetId');
@@ -124,7 +127,7 @@ export class MuxController {
         }
 
         try {
-          await this.muxService.handleAssetReady(assetId, durationSeconds);
+          await this.muxService.handleAssetReady(assetId, durationSeconds, playbackId);
         } catch (err) {
           this.logger.error(`Failed to handle asset ready ${assetId}: ${(err as Error).message}`, (err as Error).stack);
         }
