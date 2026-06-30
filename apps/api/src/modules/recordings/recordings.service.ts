@@ -204,42 +204,31 @@ export class RecordingsService {
       '',
     );
 
-    let recordingRow: Record<string, any> | null = null;
+    // ── Step 1: Create the recording row and capture its UUID ──
+    const { data: recording, error: recordingError } = await this.supabaseService.client
+      .from(TABLES.RECORDINGS)
+      .insert({
+        title: dto.title,
+        description: dto.description ?? null,
+        mux_upload_id: uploadId,
+        status: 'processing',
+      })
+      .select()
+      .single();
+
+    if (recordingError || !recording) {
+      throw new BadRequestException(`Failed to create recording: ${recordingError?.message}`);
+    }
+
+    // captured UUID — used by every child insert below
+    const recordingId: string = recording.id;
 
     const steps: TransactionStep[] = [
-      {
-        name: 'insert-recording',
-        execute: async () => {
-          const { data: recording, error } = await this.supabaseService.client
-            .from(TABLES.RECORDINGS)
-            .insert({
-              title: dto.title,
-              description: dto.description ?? null,
-              mux_upload_id: uploadId,
-              status: 'processing',
-            })
-            .select()
-            .single();
-
-          if (error || !recording) {
-            throw new BadRequestException(`Failed to create recording: ${error?.message}`);
-          }
-          recordingRow = recording;
-        },
-        rollback: async () => {
-          if (recordingRow) {
-            await this.supabaseService.client
-              .from(TABLES.RECORDINGS)
-              .delete()
-              .eq('id', recordingRow.id);
-          }
-        },
-      },
       {
         name: 'insert-batch-links',
         execute: async () => {
           const batchRecords = dto.batchIds.map((batchId) => ({
-            recording_id: recordingRow!.id,
+            recording_id: recordingId,
             batch_id: batchId,
           }));
 
@@ -255,31 +244,40 @@ export class RecordingsService {
           await this.supabaseService.client
             .from(TABLES.RECORDING_BATCHES)
             .delete()
-            .eq('recording_id', recordingRow!.id);
+            .eq('recording_id', recordingId);
         },
       },
       {
         name: 'insert-curriculum',
         execute: async () => {
-          await this.autoCreateCurriculumEntries(recordingRow!.id, dto);
+          await this.autoCreateCurriculumEntries(recordingId, dto);
         },
         rollback: async () => {
           await this.supabaseService.client
             .from(TABLES.BATCH_RECORDING_CURRICULUM)
             .delete()
-            .eq('content_id', recordingRow!.id)
+            .eq('content_id', recordingId)
             .eq('content_type', 'recording');
         },
       },
     ];
 
     const tx = new Transaction();
-    await tx.run(steps);
+    try {
+      await tx.run(steps);
+    } catch (err) {
+      // Dependent inserts (batch links, curriculum) failed — remove the orphan recording
+      await this.supabaseService.client
+        .from(TABLES.RECORDINGS)
+        .delete()
+        .eq('id', recordingId);
+      throw err;
+    }
 
     await this.redisCache.invalidateRecordingsCache();
 
     return {
-      recording: recordingRow,
+      recording,
       uploadUrl,
     };
   }

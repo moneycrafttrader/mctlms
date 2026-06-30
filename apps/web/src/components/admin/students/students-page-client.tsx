@@ -94,7 +94,19 @@ export function StudentsPageClient({ initialStudents, initialTotal }: StudentsPa
     { key: 'email', header: 'Email', sortable: true, hideOnMobile: true },
     { key: 'phone', header: 'Phone', render: (s) => s.phone || '—', hideOnMobile: true },
     { key: 'batches', header: 'Batches',
-      render: (s) => <span>{s.batches?.length ?? 0}</span> },
+      render: (s) => {
+        const list = s.batches ?? [];
+        if (list.length === 0) return <span className="text-xs text-text-muted">—</span>;
+        return (
+          <div className="flex flex-wrap gap-1">
+            {list.map((b) => (
+              <span key={b.id} className="inline-flex rounded-full border border-surface-border bg-surface-muted px-2 py-0.5 text-xs font-medium text-text-secondary">
+                {b.name}
+              </span>
+            ))}
+          </div>
+        );
+      } },
     { key: 'status', header: 'Status',
       render: (s) => <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${s.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>{s.is_active ? 'Active' : 'Inactive'}</span> },
     { key: 'actions', header: 'Actions',
