@@ -34,6 +34,7 @@ function mockChain(fromResult?: any) {
     maybeSingle: jest.fn(),
     insert: jest.fn().mockReturnThis(),
     upsert: jest.fn().mockReturnThis(),
+    update: jest.fn().mockReturnThis(),
     delete: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnValue(fromResult),
   };
@@ -45,6 +46,7 @@ function mockChain(fromResult?: any) {
   chain.range.mockReturnValue(chain);
   chain.insert.mockReturnValue(chain);
   chain.upsert.mockReturnValue(chain);
+  chain.update.mockReturnValue(chain);
   chain.delete.mockReturnValue(chain);
   chain.single.mockResolvedValue({ data: null, error: null });
   chain.maybeSingle.mockResolvedValue({ data: null, error: null });
@@ -55,6 +57,7 @@ function mockChain(fromResult?: any) {
 describe('RecordingsService', () => {
   let service: RecordingsService;
   let supabase: any;
+  let muxService: any;
   let playbackGuard: any;
   let chain: any;
 
@@ -127,6 +130,7 @@ describe('RecordingsService', () => {
               get: jest.fn(),
               setex: jest.fn(),
               del: jest.fn(),
+              scan: jest.fn().mockResolvedValue(['0', []]),
               expire: jest.fn(),
               incr: jest.fn(),
             }),
@@ -138,6 +142,7 @@ describe('RecordingsService', () => {
 
     service = module.get<RecordingsService>(RecordingsService);
     supabase = module.get(SupabaseService);
+    muxService = module.get(MuxService);
     playbackGuard = module.get(PlaybackGuardService);
     jest.clearAllMocks();
   });
@@ -310,10 +315,82 @@ describe('RecordingsService', () => {
         upsert: upsertMock,
       });
 
-      const result = await service.assignToBatches('rec-1', ['batch-1', 'batch-2']);
+      const result = await service.assignToBatches(
+        '550e8400-e29b-41d4-a716-446655440000',
+        ['550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440002'],
+      );
 
       expect(result.assignedCount).toBe(2);
       expect(upsertMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('assignToBatches - curriculum payload validation', () => {
+    it('should throw BadRequestException when recording ID is not a valid UUID', async () => {
+      await expect(
+        service.assignToBatches('not-a-uuid', ['550e8400-e29b-41d4-a716-446655440001']),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when batch ID is not a valid UUID', async () => {
+      await expect(
+        service.assignToBatches('550e8400-e29b-41d4-a716-446655440000', ['not-a-uuid']),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when batchIds is empty', async () => {
+      await expect(
+        service.assignToBatches('550e8400-e29b-41d4-a716-446655440000', []),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('assignToBatches - curriculum database error', () => {
+    it('should throw BadRequestException when curriculum upsert returns FK violation', async () => {
+      const upsertMock = jest.fn()
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValueOnce({
+          data: null,
+          error: {
+            message: 'insert or update on table "batch_recording_curriculum" violates foreign key constraint "batch_recording_curriculum_batch_id_fkey"',
+            code: '23503',
+            details: 'Key (batch_id)=(550e8400-e29b-41d4-a716-446655449999) is not present in table "batches".',
+            hint: null,
+          },
+          status: 409,
+          count: null,
+        });
+
+      chain.from.mockReturnValue({ upsert: upsertMock });
+
+      await expect(
+        service.assignToBatches(
+          '550e8400-e29b-41d4-a716-446655440000',
+          ['550e8400-e29b-41d4-a716-446655440001'],
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(upsertMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw BadRequestException when curriculum upsert returns generic error', async () => {
+      const upsertMock = jest.fn()
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValueOnce({
+          data: null,
+          error: { message: 'Database connection error', code: 'PGRST301', details: '', hint: null },
+          status: 500,
+          count: null,
+        });
+
+      chain.from.mockReturnValue({ upsert: upsertMock });
+
+      await expect(
+        service.assignToBatches(
+          '550e8400-e29b-41d4-a716-446655440000',
+          ['550e8400-e29b-41d4-a716-446655440001'],
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -326,17 +403,149 @@ describe('RecordingsService', () => {
         in: jest.fn().mockResolvedValue({ data: null, error: null }),
       });
 
-      const result = await service.removeBatchAccess('rec-1', ['batch-1']);
+      const result = await service.removeBatchAccess(
+        '550e8400-e29b-41d4-a716-446655440000',
+        ['550e8400-e29b-41d4-a716-446655440001'],
+      );
 
       expect(result.removedCount).toBe(1);
     });
   });
 
-  describe('deleteRecording - syncs curriculum', () => {
-    it('should delete curriculum entries before deleting recording', async () => {
-      const recordingId = 'rec-1';
+  describe('removeBatchAccess - curriculum database error', () => {
+    it('should throw BadRequestException when curriculum delete fails', async () => {
+      chain.from.mockReturnValue({
+        delete: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        in: jest.fn().mockResolvedValueOnce({
+          data: null,
+          error: { message: 'Delete failed', code: 'PGRST301', details: '', hint: null },
+          status: 500,
+          count: null,
+        }),
+      });
 
+      await expect(
+        service.removeBatchAccess(
+          '550e8400-e29b-41d4-a716-446655440000',
+          ['550e8400-e29b-41d4-a716-446655440001'],
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateBatchCurriculum - transaction rollback', () => {
+    it('should rollback add-batch-links when curriculum upsert fails', async () => {
+      const upsertMock = jest.fn()
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValueOnce({
+          data: null,
+          error: { message: 'Unique constraint violation', code: '23505', details: 'Key (...) already exists.', hint: null },
+          status: 409,
+          count: null,
+        });
+      const deleteMock = jest.fn().mockReturnThis();
+      const eqMock = jest.fn().mockReturnThis();
+      const inMock = jest.fn().mockResolvedValue({ data: null, error: null });
+
+      chain.from.mockReturnValue({
+        upsert: upsertMock,
+        delete: deleteMock,
+        eq: eqMock,
+        in: inMock,
+      });
+
+      await expect(
+        service.updateBatchCurriculum('550e8400-e29b-41d4-a716-446655440000', {
+          assignments: [{ batchId: '550e8400-e29b-41d4-a716-446655440001' }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      // Step 1 upsert succeeded, step 2 upsert failed
+      expect(upsertMock).toHaveBeenCalledTimes(2);
+      // Rollback called delete().eq().in() to undo step 1
+      expect(deleteMock).toHaveBeenCalledTimes(1);
+      expect(eqMock).toHaveBeenCalledTimes(1);
+      expect(inMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('should rollback remove-curriculum-entries when batch links delete fails', async () => {
+      const inMock = jest.fn()
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValueOnce({
+          data: null,
+          error: { message: 'Delete error', code: 'PGRST301', details: '', hint: null },
+          status: 500,
+          count: null,
+        });
+      const upsertMock = jest.fn().mockResolvedValue({ data: null, error: null });
+
+      chain.from.mockReturnValue({
+        delete: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        in: inMock,
+        upsert: upsertMock,
+      });
+
+      await expect(
+        service.updateBatchCurriculum('550e8400-e29b-41d4-a716-446655440000', {
+          assignments: [{ batchId: '550e8400-e29b-41d4-a716-446655440001', assigned: false }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      // Step 1 in() succeeded (curriculum delete), step 2 in() failed (batch links delete)
+      expect(inMock).toHaveBeenCalledTimes(2);
+      // Rollback re-inserted curriculum entries
+      expect(upsertMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('updateBatchCurriculum - edge cases', () => {
+    it('should throw when remove path curriculum delete fails (no steps to rollback)', async () => {
+      chain.from.mockReturnValue({
+        delete: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        in: jest.fn().mockResolvedValueOnce({
+          data: null,
+          error: { message: 'Delete error', code: 'PGRST301', details: '', hint: null },
+          status: 500,
+          count: null,
+        }),
+      });
+
+      await expect(
+        service.updateBatchCurriculum('550e8400-e29b-41d4-a716-446655440000', {
+          assignments: [{ batchId: '550e8400-e29b-41d4-a716-446655440001', assigned: false }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should handle duplicate batch assignment without error', async () => {
+      const upsertMock = jest.fn().mockResolvedValue({ data: null, error: null });
+      chain.from.mockReturnValue({ upsert: upsertMock });
+
+      const result1 = await service.updateBatchCurriculum(
+        '550e8400-e29b-41d4-a716-446655440000',
+        { assignments: [{ batchId: '550e8400-e29b-41d4-a716-446655440001' }] },
+      );
+      expect(result1.updated).toBe(true);
+
+      const result2 = await service.updateBatchCurriculum(
+        '550e8400-e29b-41d4-a716-446655440000',
+        { assignments: [{ batchId: '550e8400-e29b-41d4-a716-446655440001' }] },
+      );
+      expect(result2.updated).toBe(true);
+    });
+  });
+
+  describe('deleteRecording - syncs curriculum', () => {
+    const REC = '550e8400-e29b-41d4-a716-446655440000';
+
+    function setupRecordingMuxMock(callCount: number): { recordingId: string; muxAssetId: string } {
+      const recordingId = REC;
+      const muxAssetId = 'mux-1';
       let callIndex = 0;
+
       chain.from.mockImplementation(() => {
         const q = mockChain();
         const idx = callIndex;
@@ -344,7 +553,67 @@ describe('RecordingsService', () => {
 
         if (idx === 0) {
           q.single.mockResolvedValue({
-            data: { id: recordingId, mux_asset_id: 'mux-1', title: 'Test' },
+            data: { id: recordingId, mux_asset_id: muxAssetId, title: 'Test' },
+            error: null,
+          });
+        } else if (idx === 1) {
+          // Transaction step 1: delete curriculum (delete + eq + eq)
+          q.delete.mockReturnValue(q);
+          q.eq
+            .mockImplementationOnce(() => q)
+            .mockResolvedValueOnce({ data: null, error: null });
+        } else if (idx === 2) {
+          // Transaction step 2: delete batch links (delete + eq)
+          q.delete.mockReturnValue(q);
+          q.eq.mockResolvedValue({ data: null, error: null });
+        } else if (idx === 3) {
+          // Transaction step 3: update cleanup_pending (update + eq)
+          q.update.mockReturnValue(q);
+          q.eq.mockResolvedValue({ data: null, error: null });
+        } else {
+          // Outside transaction: delete recording (delete + eq)
+          q.delete.mockReturnValue(q);
+          q.eq.mockResolvedValue({ data: null, error: null });
+        }
+        return q;
+      });
+
+      return { recordingId, muxAssetId };
+    }
+
+    it('should delete curriculum + batch links, clean Mux, then delete recording', async () => {
+      const { recordingId } = setupRecordingMuxMock(5);
+
+      const result = await service.deleteRecording(recordingId);
+
+      expect(result.deleted).toBe(true);
+      expect(result.cleanupPending).toBeUndefined();
+      expect(muxService.deleteAsset).toHaveBeenCalledWith('mux-1');
+    });
+
+    it('should return cleanupPending=true when Mux deletion fails', async () => {
+      const { recordingId } = setupRecordingMuxMock(4);
+      jest.spyOn(muxService, 'deleteAsset').mockRejectedValue(new Error('Mux API timeout'));
+
+      const result = await service.deleteRecording(recordingId);
+
+      expect(result.deleted).toBe(true);
+      expect(result.cleanupPending).toBe(true);
+      expect(muxService.deleteAsset).toHaveBeenCalledWith('mux-1');
+    });
+
+    it('should skip Mux deletion when recording has no mux_asset_id', async () => {
+      const recordingId = REC;
+      let callIndex = 0;
+
+      chain.from.mockImplementation(() => {
+        const q = mockChain();
+        const idx = callIndex;
+        callIndex++;
+
+        if (idx === 0) {
+          q.single.mockResolvedValue({
+            data: { id: recordingId, mux_asset_id: null, title: 'Test no Mux' },
             error: null,
           });
         } else if (idx === 1) {
@@ -352,6 +621,12 @@ describe('RecordingsService', () => {
           q.eq
             .mockImplementationOnce(() => q)
             .mockResolvedValueOnce({ data: null, error: null });
+        } else if (idx === 2) {
+          q.delete.mockReturnValue(q);
+          q.eq.mockResolvedValue({ data: null, error: null });
+        } else if (idx === 3) {
+          q.update.mockReturnValue(q);
+          q.eq.mockResolvedValue({ data: null, error: null });
         } else {
           q.delete.mockReturnValue(q);
           q.eq.mockResolvedValue({ data: null, error: null });
@@ -362,6 +637,7 @@ describe('RecordingsService', () => {
       const result = await service.deleteRecording(recordingId);
 
       expect(result.deleted).toBe(true);
+      expect(muxService.deleteAsset).not.toHaveBeenCalled();
     });
   });
 });

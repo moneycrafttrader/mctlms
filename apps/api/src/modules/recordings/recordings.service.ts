@@ -42,6 +42,12 @@ export class RecordingsService {
 
   // ── Topics ────────────────────────────────────────────────
 
+  /**
+   * Create a new topic.
+   * @param dto - Topic name and optional description/sort order.
+   * @returns The created topic row.
+   * @throws BadRequestException on DB insert failure.
+   */
   async createTopic(dto: CreateTopicDto) {
     const { data, error } = await this.supabaseService.client
       .from(TABLES.TOPICS)
@@ -61,6 +67,11 @@ export class RecordingsService {
     return data;
   }
 
+  /**
+   * List all topics ordered by sort_order ascending.
+   * @returns Array of topic rows, each with a recordings count.
+   * @throws BadRequestException on DB query failure.
+   */
   async getTopics() {
     const { data, error } = await this.supabaseService.client
       .from(TABLES.TOPICS)
@@ -75,6 +86,12 @@ export class RecordingsService {
     return data ?? [];
   }
 
+  /**
+   * Fetch a single topic with its recordings.
+   * @param id - Topic UUID.
+   * @returns Topic row with nested recordings array.
+   * @throws NotFoundException if the topic does not exist.
+   */
   async getTopicById(id: string) {
     const { data: topic, error: topicError } = await this.supabaseService.client
       .from(TABLES.TOPICS)
@@ -97,6 +114,13 @@ export class RecordingsService {
 
   // ── Recording CRUD ────────────────────────────────────────
 
+  /**
+   * Create a recording with direct-to-ready status and batch links.
+   * Does NOT create a Mux upload — intended for pre-recorded content.
+   * @param dto - Title, description, batch IDs, curriculum metadata.
+   * @returns The created recording row with batchIds and batchNames.
+   * @throws BadRequestException on insert or batch-linking failure.
+   */
   async create(dto: CreateRecordingDto) {
     const { data: recording, error } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
@@ -153,6 +177,13 @@ export class RecordingsService {
     };
   }
 
+  /**
+   * Paginated admin listing of recordings with batch names.
+   * @param page - Page number (1-indexed, default 1).
+   * @param limit - Page size (max 100, default 20).
+   * @returns Paginated result with items, total, page, limit.
+   * @throws BadRequestException on DB query failure.
+   */
   async findAll(page = 1, limit = 20) {
     limit = Math.min(limit, 100);
     const from = (page - 1) * limit;
@@ -198,6 +229,14 @@ export class RecordingsService {
     };
   }
 
+  /**
+   * Create a recording with a Mux upload URL.
+   * Recording starts in 'processing' status; Mux webhook marks it 'ready'.
+   * Batch linking and curriculum creation are wrapped in a Transaction.
+   * @param dto - Title, description, batch IDs, curriculum metadata.
+   * @returns The recording row and the Mux upload URL.
+   * @throws BadRequestException if recording creation or transaction steps fail.
+   */
   async createRecordingWithUpload(dto: CreateRecordingDto) {
     const { uploadUrl, uploadId } = await this.muxService.createUploadUrl(
       dto.title,
@@ -284,6 +323,13 @@ export class RecordingsService {
 
   // ── Mux Upload URL ────────────────────────────────────────
 
+  /**
+   * Create a direct Mux upload URL for the frontend to PUT a video file.
+   * The recording starts in 'processing' status.
+   * @param dto - Title for the recording/upload.
+   * @returns The Mux upload URL and the created recording row.
+   * @throws BadRequestException if recording creation fails.
+   */
   async requestUploadUrl(dto: RequestUploadDto) {
     const { uploadUrl, uploadId } = await this.muxService.createDirectUploadUrl(dto.title);
 
@@ -307,7 +353,17 @@ export class RecordingsService {
 
   // ── Batch Assignment ──────────────────────────────────────
 
+  /**
+   * Assign a recording to one or more batches.
+   * Inserts recording_batches rows and auto-creates curriculum entries.
+   * @param recordingId - UUID of the recording.
+   * @param batchIds - Array of batch UUIDs.
+   * @returns Object with assignedCount.
+   * @throws BadRequestException on invalid payload, batch-link failure, or curriculum failure.
+   */
   async assignToBatches(recordingId: string, batchIds: string[]) {
+    this.validateCurriculumPayload(recordingId, batchIds);
+
     const records = batchIds.map((batchId) => ({
       recording_id: recordingId,
       batch_id: batchId,
@@ -322,7 +378,6 @@ export class RecordingsService {
       throw new BadRequestException('Failed to assign recording to batches');
     }
 
-    // Sync curriculum entries for consistency
     const curriculumEntries = batchIds.map((batchId) => ({
       batch_id: batchId,
       content_id: recordingId,
@@ -334,33 +389,48 @@ export class RecordingsService {
       is_published: true,
     }));
 
-    const { error: curriculumError } = await this.supabaseService.client
+    this.logger.log(
+      `[Curriculum UPSERT] BEGIN | recordingId=${recordingId} | batchIds=${JSON.stringify(batchIds)} | entries=${JSON.stringify(curriculumEntries)} | table=${TABLES.BATCH_RECORDING_CURRICULUM} | ts=${new Date().toISOString()}`,
+    );
+
+    const { data, error: curriculumError, status, count } = await this.supabaseService.client
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
       .upsert(curriculumEntries, { onConflict: 'batch_id,content_id,content_type' });
 
     if (curriculumError) {
-      this.logger.warn(`Failed to sync curriculum entries for recording ${recordingId}: ${curriculumError.message}`);
+      this.logger.error(
+        `[Curriculum UPSERT] FAILED | recordingId=${recordingId} | batchIds=${JSON.stringify(batchIds)} | error=${JSON.stringify(curriculumError)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+      );
+      throw new BadRequestException(
+        `Failed to create curriculum entries for recording ${recordingId}. Supabase Error [${curriculumError.code}]: ${curriculumError.message}${curriculumError.details ? ` | Details: ${curriculumError.details}` : ''}${curriculumError.hint ? ` | Hint: ${curriculumError.hint}` : ''}`,
+      );
     }
+
+    this.logger.debug(
+      `[Curriculum UPSERT] SUCCEEDED | recordingId=${recordingId} | batchIds=${JSON.stringify(batchIds)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+    );
 
     await this.redisCache.invalidateRecordingsCache();
 
     return { assignedCount: batchIds.length };
   }
 
+  /**
+   * Remove a recording from one or more batches.
+   * Deletes curriculum entries first, then removes batch links.
+   * @param recordingId - UUID of the recording.
+   * @param batchIds - Array of batch UUIDs to remove.
+   * @returns Object with removedCount.
+   * @throws BadRequestException on invalid payload, curriculum delete failure, or batch-link delete failure.
+   */
   async removeBatchAccess(recordingId: string, batchIds: string[]) {
-    const { error } = await this.supabaseService.client
-      .from(TABLES.RECORDING_BATCHES)
-      .delete()
-      .eq('recording_id', recordingId)
-      .in('batch_id', batchIds);
+    this.validateCurriculumPayload(recordingId, batchIds);
 
-    if (error) {
-      this.logger.error(`Failed to remove batch access: ${error.message}`);
-      throw new BadRequestException('Failed to remove batch access');
-    }
+    this.logger.log(
+      `[Curriculum DELETE] BEGIN | recordingId=${recordingId} | batchIds=${JSON.stringify(batchIds)} | table=${TABLES.BATCH_RECORDING_CURRICULUM} | ts=${new Date().toISOString()}`,
+    );
 
-    // Remove curriculum entries for consistency
-    const { error: curriculumError } = await this.supabaseService.client
+    const { data, error: curriculumError, status, count } = await this.supabaseService.client
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
       .delete()
       .eq('content_id', recordingId)
@@ -368,7 +438,27 @@ export class RecordingsService {
       .in('batch_id', batchIds);
 
     if (curriculumError) {
-      this.logger.warn(`Failed to remove curriculum entries for recording ${recordingId}: ${curriculumError.message}`);
+      this.logger.error(
+        `[Curriculum DELETE] FAILED | recordingId=${recordingId} | batchIds=${JSON.stringify(batchIds)} | error=${JSON.stringify(curriculumError)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+      );
+      throw new BadRequestException(
+        `Failed to remove curriculum entries for recording ${recordingId}. Supabase Error [${curriculumError.code}]: ${curriculumError.message}${curriculumError.details ? ` | Details: ${curriculumError.details}` : ''}${curriculumError.hint ? ` | Hint: ${curriculumError.hint}` : ''}`,
+      );
+    }
+
+    this.logger.debug(
+      `[Curriculum DELETE] SUCCEEDED | recordingId=${recordingId} | batchIds=${JSON.stringify(batchIds)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+    );
+
+    const { error: linkError } = await this.supabaseService.client
+      .from(TABLES.RECORDING_BATCHES)
+      .delete()
+      .eq('recording_id', recordingId)
+      .in('batch_id', batchIds);
+
+    if (linkError) {
+      this.logger.error(`Failed to remove batch access: ${linkError.message}`);
+      throw new BadRequestException('Failed to remove batch access');
     }
 
     await this.redisCache.invalidateRecordingsCache();
@@ -378,6 +468,15 @@ export class RecordingsService {
 
   // ── Batch Curriculum (per-batch metadata) ─────────────────
 
+  /**
+   * Update per-batch curriculum metadata for a recording.
+   * Supports both ADD (assigned: true) and REMOVE (assigned: false) operations.
+   * All steps are wrapped in a Transaction — if any step fails, prior steps are rolled back.
+   * @param recordingId - UUID of the recording.
+   * @param dto - Array of BatchCurriculumAssignment with batchId, sectionName, sortOrder, isVisible, assigned.
+   * @returns Object with updated: true.
+   * @throws BadRequestException on invalid payload or any DB operation failure.
+   */
   async updateBatchCurriculum(recordingId: string, dto: UpdateBatchCurriculumDto) {
     const addBatches: string[] = [];
     const removeBatches: string[] = [];
@@ -390,20 +489,17 @@ export class RecordingsService {
       }
     }
 
+    const steps: TransactionStep[] = [];
+    const startTime = Date.now();
+
+    // ── ADD path ───────────────────────────────────────────────
     if (addBatches.length > 0) {
+      this.validateCurriculumPayload(recordingId, addBatches);
+
       const records = addBatches.map((batchId) => ({
         recording_id: recordingId,
         batch_id: batchId,
       }));
-
-      const { error: linkError } = await this.supabaseService.client
-        .from(TABLES.RECORDING_BATCHES)
-        .upsert(records, { onConflict: 'recording_id,batch_id' });
-
-      if (linkError) {
-        this.logger.error(`Failed to add batch links: ${linkError.message}`);
-        throw new BadRequestException('Failed to update batch assignments');
-      }
 
       const assignmentMap = new Map<string, BatchCurriculumAssignment>();
       for (const a of dto.assignments) {
@@ -424,38 +520,144 @@ export class RecordingsService {
         };
       });
 
-      const { error: curriculumError } = await this.supabaseService.client
-        .from(TABLES.BATCH_RECORDING_CURRICULUM)
-        .upsert(curriculumEntries, { onConflict: 'batch_id,content_id,content_type' });
-
-      if (curriculumError) {
-        this.logger.warn(`Failed to sync curriculum: ${curriculumError.message}`);
-      }
+      steps.push(
+        {
+          name: 'add-batch-links',
+          execute: async () => {
+            const { error } = await this.supabaseService.client
+              .from(TABLES.RECORDING_BATCHES)
+              .upsert(records, { onConflict: 'recording_id,batch_id' });
+            if (error) throw new BadRequestException(`Failed to add batch links: ${error.message}`);
+          },
+          rollback: async () => {
+            await this.supabaseService.client
+              .from(TABLES.RECORDING_BATCHES)
+              .delete()
+              .eq('recording_id', recordingId)
+              .in('batch_id', addBatches);
+          },
+        },
+        {
+          name: 'add-curriculum-entries',
+          execute: async () => {
+            const { data, error, status, count } = await this.supabaseService.client
+              .from(TABLES.BATCH_RECORDING_CURRICULUM)
+              .upsert(curriculumEntries, { onConflict: 'batch_id,content_id,content_type' });
+            if (error) {
+              this.logger.error(
+                `[Curriculum UPSERT] FAILED | recordingId=${recordingId} | batchIds=${JSON.stringify(addBatches)} | error=${JSON.stringify(error)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+              );
+              throw new BadRequestException(
+                `Failed to sync curriculum entries for recording ${recordingId}. Supabase Error [${error.code}]: ${error.message}${error.details ? ` | Details: ${error.details}` : ''}${error.hint ? ` | Hint: ${error.hint}` : ''}`,
+              );
+            }
+            this.logger.debug(
+              `[Curriculum UPSERT] SUCCEEDED | recordingId=${recordingId} | batchIds=${JSON.stringify(addBatches)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+            );
+          },
+          rollback: async () => {
+            await this.supabaseService.client
+              .from(TABLES.BATCH_RECORDING_CURRICULUM)
+              .delete()
+              .eq('content_id', recordingId)
+              .eq('content_type', 'recording')
+              .in('batch_id', addBatches);
+          },
+        },
+      );
     }
 
+    // ── REMOVE path ────────────────────────────────────────────
     if (removeBatches.length > 0) {
-      const { error: curriculumError } = await this.supabaseService.client
-        .from(TABLES.BATCH_RECORDING_CURRICULUM)
-        .delete()
-        .eq('content_id', recordingId)
-        .eq('content_type', 'recording')
-        .in('batch_id', removeBatches);
+      this.validateCurriculumPayload(recordingId, removeBatches);
 
-      if (curriculumError) {
-        this.logger.warn(`Failed to remove curriculum: ${curriculumError.message}`);
-      }
-
-      const { error: linkError } = await this.supabaseService.client
-        .from(TABLES.RECORDING_BATCHES)
-        .delete()
-        .eq('recording_id', recordingId)
-        .in('batch_id', removeBatches);
-
-      if (linkError) {
-        this.logger.error(`Failed to remove batch links: ${linkError.message}`);
-        throw new BadRequestException('Failed to update batch assignments');
-      }
+      steps.push(
+        {
+          name: 'remove-curriculum-entries',
+          execute: async () => {
+            const { data, error, status, count } = await this.supabaseService.client
+              .from(TABLES.BATCH_RECORDING_CURRICULUM)
+              .delete()
+              .eq('content_id', recordingId)
+              .eq('content_type', 'recording')
+              .in('batch_id', removeBatches);
+            if (error) {
+              this.logger.error(
+                `[Curriculum DELETE] FAILED | recordingId=${recordingId} | batchIds=${JSON.stringify(removeBatches)} | error=${JSON.stringify(error)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+              );
+              throw new BadRequestException(
+                `Failed to remove curriculum entries for recording ${recordingId}. Supabase Error [${error.code}]: ${error.message}${error.details ? ` | Details: ${error.details}` : ''}${error.hint ? ` | Hint: ${error.hint}` : ''}`,
+              );
+            }
+            this.logger.debug(
+              `[Curriculum DELETE] SUCCEEDED | recordingId=${recordingId} | batchIds=${JSON.stringify(removeBatches)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+            );
+          },
+          rollback: async () => {
+            await this.supabaseService.client
+              .from(TABLES.BATCH_RECORDING_CURRICULUM)
+              .upsert(
+                removeBatches.map((batchId) => ({
+                  batch_id: batchId,
+                  content_id: recordingId,
+                  content_type: 'recording',
+                  category_name: 'General',
+                  module_name: null,
+                  title_override: null,
+                  sort_order: 0,
+                  is_published: true,
+                })),
+                { onConflict: 'batch_id,content_id,content_type' },
+              );
+          },
+        },
+        {
+          name: 'remove-batch-links',
+          execute: async () => {
+            const { error } = await this.supabaseService.client
+              .from(TABLES.RECORDING_BATCHES)
+              .delete()
+              .eq('recording_id', recordingId)
+              .in('batch_id', removeBatches);
+            if (error) throw new BadRequestException(`Failed to remove batch links: ${error.message}`);
+          },
+          rollback: async () => {
+            await this.supabaseService.client
+              .from(TABLES.RECORDING_BATCHES)
+              .upsert(
+                removeBatches.map((batchId) => ({
+                  recording_id: recordingId,
+                  batch_id: batchId,
+                })),
+                { onConflict: 'recording_id,batch_id' },
+              );
+          },
+        },
+      );
     }
+
+    if (steps.length === 0) {
+      return { updated: true };
+    }
+
+    // ── Execute transaction ────────────────────────────────────
+    this.logger.log(
+      `[Transaction BEGIN] updateBatchCurriculum | recordingId=${recordingId} | addBatches=${JSON.stringify(addBatches)} | removeBatches=${JSON.stringify(removeBatches)} | ts=${new Date().toISOString()}`,
+    );
+
+    const tx = new Transaction();
+    try {
+      await tx.run(steps);
+    } catch (err) {
+      this.logger.log(
+        `[Transaction ROLLBACK] updateBatchCurriculum | recordingId=${recordingId} | durationMs=${Date.now() - startTime} | error=${(err as Error).message} | ts=${new Date().toISOString()}`,
+      );
+      throw err;
+    }
+
+    this.logger.log(
+      `[Transaction COMMIT] updateBatchCurriculum | recordingId=${recordingId} | durationMs=${Date.now() - startTime} | ts=${new Date().toISOString()}`,
+    );
 
     await this.redisCache.invalidateRecordingsCache();
 
@@ -464,6 +666,14 @@ export class RecordingsService {
 
   // ── Update / Delete ───────────────────────────────────────
 
+  /**
+   * Update a recording's title, description, or topic assignment.
+   * Only provided fields are updated.
+   * @param id - UUID of the recording.
+   * @param dto - Fields to update (title, description, topicId).
+   * @returns The updated recording row with topic name.
+   * @throws BadRequestException if no fields provided or DB update fails.
+   */
   async updateRecording(id: string, dto: UpdateRecordingDto) {
     const updateData: Record<string, any> = {};
     if (dto.title !== undefined) updateData.title = dto.title;
@@ -489,6 +699,18 @@ export class RecordingsService {
     return data;
   }
 
+  /**
+   * Delete a recording and its associated Mux asset.
+   * Flow:
+   *   1. Transaction: delete curriculum → delete batch links → set cleanup_pending=true
+   *   2. Outside transaction: delete Mux asset (never rolls back DB for Mux failure)
+   *   3. On Mux success: hard-delete the recording row
+   *   4. On Mux failure: emit RECORDING_CLEANUP_PENDING event, return cleanupPending:true
+   * @param id - UUID of the recording.
+   * @returns Object with deleted:true and optionally cleanupPending:true.
+   * @throws NotFoundException if recording does not exist.
+   * @throws BadRequestException on transaction step failure.
+   */
   async deleteRecording(id: string) {
     const { data: recording } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
@@ -500,24 +722,94 @@ export class RecordingsService {
       throw new NotFoundException('Recording not found');
     }
 
+    // ── Transaction: remove DB references, mark pending cleanup ──
+    const steps: TransactionStep[] = [
+      {
+        name: 'delete-curriculum',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.BATCH_RECORDING_CURRICULUM)
+            .delete()
+            .eq('content_id', id)
+            .eq('content_type', 'recording');
+          if (error) throw new BadRequestException(`Failed to delete curriculum entries: ${error.message}`);
+        },
+        rollback: async () => {
+          this.logger.warn(`Cannot roll back curriculum deletion for recording ${id}`);
+        },
+      },
+      {
+        name: 'delete-batch-links',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.RECORDING_BATCHES)
+            .delete()
+            .eq('recording_id', id);
+          if (error) throw new BadRequestException(`Failed to delete batch links: ${error.message}`);
+        },
+        rollback: async () => {
+          this.logger.warn(`Cannot roll back batch-link deletion for recording ${id}`);
+        },
+      },
+      {
+        name: 'mark-cleanup-pending',
+        execute: async () => {
+          const { error } = await this.supabaseService.client
+            .from(TABLES.RECORDINGS)
+            .update({ cleanup_pending: true })
+            .eq('id', id);
+          if (error) throw new BadRequestException(`Failed to mark cleanup pending: ${error.message}`);
+        },
+        rollback: async () => {
+          await this.supabaseService.client
+            .from(TABLES.RECORDINGS)
+            .update({ cleanup_pending: false })
+            .eq('id', id);
+        },
+      },
+    ];
+
+    const tx = new Transaction();
+    await tx.run(steps);
+
+    // ── Outside transaction: delete Mux asset (never roll back DB for this) ──
     if (recording.mux_asset_id) {
-      await this.muxService.deleteAsset(recording.mux_asset_id);
+      try {
+        await this.muxService.deleteAsset(recording.mux_asset_id);
+      } catch (err) {
+        this.logger.error(
+          `Failed to delete Mux asset ${recording.mux_asset_id} for recording ${id}: ${(err as Error).message}. Cleanup_pending set to true; a reconciliation job should retry Mux deletion.`,
+        );
+
+        logEntityEvent(
+          this.observabilityService,
+          'RECORDING_CLEANUP_PENDING',
+          'recording',
+          id,
+          'system',
+          { title: recording.title, mux_asset_id: recording.mux_asset_id, error: (err as Error).message },
+        ).catch(() => {});
+
+        await this.redisCache.invalidateRecordingsCache();
+
+        return { deleted: true, cleanupPending: true };
+      }
     }
 
-    await this.supabaseService.client
-      .from(TABLES.BATCH_RECORDING_CURRICULUM)
-      .delete()
-      .eq('content_id', id)
-      .eq('content_type', 'recording');
-
-    const { error } = await this.supabaseService.client
+    // ── Mux cleaned (or none): hard-delete the recording row ──
+    const { error: deleteError } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
       .delete()
       .eq('id', id);
 
-    if (error) {
-      this.logger.error(`Failed to delete recording ${id}: ${error.message}`);
-      throw new BadRequestException('Failed to delete recording');
+    if (deleteError) {
+      this.logger.error(
+        `Failed to delete recording row ${id} after Mux cleanup: ${deleteError.message}. Cleanup_pending remains true.`,
+      );
+
+      await this.redisCache.invalidateRecordingsCache();
+
+      return { deleted: true, cleanupPending: true };
     }
 
     logEntityEvent(
@@ -536,6 +828,15 @@ export class RecordingsService {
 
   // ── Admin List (paginated, with batch info) ───────────────
 
+  /**
+   * Paginated admin recording list with topic and batch IDs.
+   * Unlike findAll, this uses a join to include batch IDs and supports topic filtering.
+   * @param topicId - Optional topic UUID to filter by.
+   * @param page - Page number (1-indexed, default 1).
+   * @param limit - Page size (default 20).
+   * @returns Paginated result with items (including nested batch_id array), total.
+   * @throws BadRequestException on DB query failure.
+   */
   async getAdminRecordings(topicId?: string, page = 1, limit = 20) {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
@@ -566,6 +867,15 @@ export class RecordingsService {
 
   // ── Student: accessible recordings ────────────────────────
 
+  /**
+   * Get recordings accessible to a student, optionally filtered by topic.
+   * Results are cached in Redis for 300 seconds.
+   * Access is determined via recording_batches (authorization table).
+   * @param userId - UUID of the student.
+   * @param topicId - Optional topic UUID to filter by.
+   * @returns Array of recordings with progress data.
+   * @throws BadRequestException on DB query failure.
+   */
   async getRecordingsForStudent(userId: string, topicId?: string) {
     const cacheKey = this.redisCache.key('recordings', 'flat', userId, topicId ?? 'all');
     return this.redisCache.wrap(cacheKey, 300, async () => {
@@ -638,6 +948,14 @@ export class RecordingsService {
 
   // ── Student: grouped recordings by batch → section ────────
 
+  /**
+   * Get all of a student's recordings grouped by batch → curriculum section.
+   * Results are cached in Redis for 300 seconds.
+   * Access is determined via recording_batches; sections come from batch_recording_curriculum.
+   * @param userId - UUID of the student.
+   * @returns Array of batch groups, each with sections containing recordings with progress.
+   * @throws BadRequestException on DB query failure (propagated from fetchMyRecordingsGrouped).
+   */
   async getMyRecordingsGrouped(userId: string) {
     const cacheKey = this.redisCache.key('recordings', 'grouped', userId);
     return this.redisCache.wrap(cacheKey, 300, async () => {
@@ -834,11 +1152,36 @@ export class RecordingsService {
     throw new ForbiddenException('You do not have access to this recording');
   }
 
+  /**
+   * Authorize a student's playback request for a recording.
+   * Validates access via recording_batches, then delegates to PlaybackGuard for token authorization.
+   * @param recordingId - UUID of the recording.
+   * @param userId - UUID of the student.
+   * @param deviceId - Optional device identifier for pinning.
+   * @param ip - Optional IP address for geo-checking.
+   * @returns PlaybackGuard authorization result.
+   * @throws NotFoundException if recording not found.
+   * @throws BadRequestException if recording is not in 'ready' status.
+   * @throws ForbiddenException if student has no batch access to the recording.
+   */
   async authorizePlayback(recordingId: string, userId: string, deviceId?: string, ip?: string) {
     await this.validateAccess(recordingId, userId);
     return this.playbackGuard.authorize(userId, recordingId, deviceId, ip);
   }
 
+  /**
+   * Get a signed Mux playback URL for a student.
+   * Validates access then delegates to PlaybackGuard for the signed URL with JWT.
+   * @param recordingId - UUID of the recording.
+   * @param userId - UUID of the student.
+   * @param token - Authorization token from authorizePlayback step.
+   * @param deviceId - Optional device identifier.
+   * @param ip - Optional IP address.
+   * @returns Signed playback URL with expiry timestamp.
+   * @throws NotFoundException if recording not found.
+   * @throws BadRequestException if recording has no playback ID or not ready.
+   * @throws ForbiddenException if student has no batch access.
+   */
   async getPlaybackUrl(recordingId: string, userId: string, token: string, deviceId?: string, ip?: string) {
     await this.validateAccess(recordingId, userId);
 
@@ -864,6 +1207,15 @@ export class RecordingsService {
 
   // ── Progress ──────────────────────────────────────────────
 
+  /**
+   * Update a student's watch progress for a recording.
+   * Uses upsert on user_id+video_id conflict to support partial updates.
+   * @param userId - UUID of the student.
+   * @param recordingId - UUID of the recording.
+   * @param dto - watchedSeconds, completed status.
+   * @returns The upserted progress row.
+   * @throws BadRequestException on DB upsert failure.
+   */
   async updateProgress(
     userId: string,
     recordingId: string,
@@ -894,6 +1246,14 @@ export class RecordingsService {
 
   // ── Batch Recordings (classroom) ──────────────────────────
 
+  /**
+   * Get recordings for a specific batch (classroom context).
+   * Verifies the student is a member of the batch before returning recordings.
+   * @param batchId - UUID of the batch.
+   * @param userId - UUID of the student.
+   * @returns Array of recordings in the batch with title, description, duration, status.
+   * @throws ForbiddenException if student is not a member of the batch.
+   */
   async getBatchRecordings(batchId: string, userId: string) {
     const { data: membership } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
@@ -934,7 +1294,31 @@ export class RecordingsService {
     }));
   }
 
+  private validateCurriculumPayload(recordingId: string, batchIds: string[]): void {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (!recordingId || !uuidRegex.test(recordingId)) {
+      throw new BadRequestException(
+        `Invalid recording ID format for curriculum operation: "${recordingId}". Expected a valid UUID.`,
+      );
+    }
+
+    if (!Array.isArray(batchIds) || batchIds.length === 0) {
+      throw new BadRequestException('At least one batch ID is required for curriculum operation');
+    }
+
+    for (const batchId of batchIds) {
+      if (!batchId || !uuidRegex.test(batchId)) {
+        throw new BadRequestException(
+          `Invalid batch ID format in curriculum operation: "${batchId}". Expected a valid UUID.`,
+        );
+      }
+    }
+  }
+
   private async autoCreateCurriculumEntries(recordingId: string, dto: CreateRecordingDto) {
+    this.validateCurriculumPayload(recordingId, dto.batchIds);
+
     const categoryName = dto.categoryName || 'General';
     const moduleName = dto.moduleName || null;
     const isPublished = dto.isPublished ?? true;
@@ -950,12 +1334,25 @@ export class RecordingsService {
       is_published: isPublished,
     }));
 
-    const { error } = await this.supabaseService.client
+    this.logger.log(
+      `[Curriculum UPSERT] BEGIN | recordingId=${recordingId} | batchIds=${JSON.stringify(dto.batchIds)} | entries=${JSON.stringify(entries)} | table=${TABLES.BATCH_RECORDING_CURRICULUM} | ts=${new Date().toISOString()}`,
+    );
+
+    const { data, error, status, count } = await this.supabaseService.client
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
       .upsert(entries, { onConflict: 'batch_id,content_id,content_type' });
 
     if (error) {
-      this.logger.warn(`Failed to auto-create curriculum entries for recording ${recordingId}: ${error.message}`);
+      this.logger.error(
+        `[Curriculum UPSERT] FAILED | recordingId=${recordingId} | batchIds=${JSON.stringify(dto.batchIds)} | error=${JSON.stringify(error)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+      );
+      throw new BadRequestException(
+        `Failed to create curriculum entries for recording ${recordingId}. Supabase Error [${error.code}]: ${error.message}${error.details ? ` | Details: ${error.details}` : ''}${error.hint ? ` | Hint: ${error.hint}` : ''}`,
+      );
     }
+
+    this.logger.debug(
+      `[Curriculum UPSERT] SUCCEEDED | recordingId=${recordingId} | batchIds=${JSON.stringify(dto.batchIds)} | status=${status} | count=${count} | ts=${new Date().toISOString()}`,
+    );
   }
 }

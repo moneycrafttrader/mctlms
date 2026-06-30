@@ -354,6 +354,9 @@ CREATE TABLE recordings (
   duration_seconds INTEGER,
   status TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'ready', 'failed')),
   sort_order INTEGER NOT NULL DEFAULT 0,
+  cleanup_pending BOOLEAN NOT NULL DEFAULT false,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  cleanup_failed BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

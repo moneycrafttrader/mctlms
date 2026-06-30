@@ -69,6 +69,7 @@ import { ObservabilityInterceptor } from './modules/observability/observability.
 
 // ── Jobs ─────────────────────────────────────────────────────
 import { RecordingUploadJob } from './jobs/recording-upload.job';
+import { RecordingCleanupJob } from './jobs/recording-cleanup.job';
 
 @Global()
 @Module({
@@ -153,6 +154,7 @@ import { RecordingUploadJob } from './jobs/recording-upload.job';
     SupabaseService,
     RedisCacheService,
     RecordingUploadJob,
+    RecordingCleanupJob,
 
     // ── Global guards ─────────────────────────────────────────
     // Order matters: JwtAuthGuard runs first, then RolesGuard
