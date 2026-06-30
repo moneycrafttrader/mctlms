@@ -8,6 +8,7 @@ import {
   Body,
   Query,
   Req,
+  Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { UserRole } from '@lms/shared-types';
@@ -23,6 +24,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller()
 export class RecordingsController {
+  private readonly logger = new Logger(RecordingsController.name);
   constructor(private readonly recordingsService: RecordingsService) {}
 
   // ── Admin: Topics ──────────────────────────────────────────
@@ -142,17 +144,23 @@ export class RecordingsController {
 
   @Roles(UserRole.STUDENT)
   @Get('recordings/my')
-  getMyRecordings(
+  async getMyRecordings(
     @CurrentUser() user: { id: string },
     @Query('topicId') topicId?: string,
   ) {
-    return this.recordingsService.getRecordingsForStudent(user.id, topicId);
+    this.logger.debug(`[DEBUG_CONTROLLER] GET /recordings/my | studentId=${user.id} | topicId=${topicId ?? 'none'}`);
+    const result = await this.recordingsService.getRecordingsForStudent(user.id, topicId);
+    this.logger.debug(`[DEBUG_CONTROLLER] GET /recordings/my | response=${JSON.stringify(result)}`);
+    return result;
   }
 
   @Roles(UserRole.STUDENT)
   @Get('recordings/my/grouped')
-  getMyRecordingsGrouped(@CurrentUser() user: { id: string }) {
-    return this.recordingsService.getMyRecordingsGrouped(user.id);
+  async getMyRecordingsGrouped(@CurrentUser() user: { id: string }) {
+    this.logger.debug(`[DEBUG_CONTROLLER] GET /recordings/my/grouped | studentId=${user.id}`);
+    const result = await this.recordingsService.getMyRecordingsGrouped(user.id);
+    this.logger.debug(`[DEBUG_CONTROLLER] GET /recordings/my/grouped | response=${JSON.stringify(result)}`);
+    return result;
   }
 
   @Roles(UserRole.STUDENT)

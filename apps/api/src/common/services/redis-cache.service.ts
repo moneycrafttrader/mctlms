@@ -38,10 +38,14 @@ export class RedisCacheService {
 
   async wrap<T>(key: string, ttl: number, factory: () => Promise<T>): Promise<T> {
     const cached = await this.get<T>(key);
-    if (cached !== null) return cached;
-
+    if (cached !== null) {
+      this.logger.debug(`[DEBUG_REDIS] CACHE HIT | key=${key}`);
+      return cached;
+    }
+    this.logger.debug(`[DEBUG_REDIS] CACHE MISS | key=${key} | computing...`);
     const fresh = await factory();
     await this.set(key, fresh, ttl);
+    this.logger.debug(`[DEBUG_REDIS] CACHE SET | key=${key} | ttl=${ttl}`);
     return fresh;
   }
 
@@ -72,6 +76,7 @@ export class RedisCacheService {
   }
 
   async invalidateRecordingsCache(): Promise<void> {
+    this.logger.debug(`[DEBUG_REDIS] CACHE INVALIDATED | pattern=cache:recordings:*`);
     await this.delByPattern('cache:recordings:*');
   }
 }

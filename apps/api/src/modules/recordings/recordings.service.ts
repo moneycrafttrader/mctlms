@@ -884,14 +884,18 @@ export class RecordingsService {
   }
 
   private async fetchRecordingsForStudent(userId: string, topicId?: string) {
+    this.logger.debug(`[DEBUG] fetchRecordingsForStudent | studentId=${userId} | topicId=${topicId ?? 'none'}`);
+
     const { data: batchMemberships } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
       .select('batch_id')
       .eq('user_id', userId);
 
     const batchIds = (batchMemberships ?? []).map((b: any) => b.batch_id);
+    this.logger.debug(`[DEBUG] fetchRecordingsForStudent | batchMemberships count=${batchMemberships?.length ?? 0} | batchIds=${JSON.stringify(batchIds)}`);
 
     if (batchIds.length === 0) {
+      this.logger.debug(`[DEBUG] fetchRecordingsForStudent | EARLY RETURN: no batch memberships | response=[]`);
       return [];
     }
 
@@ -903,8 +907,10 @@ export class RecordingsService {
     const recordingIds = [
       ...new Set((accessRecords ?? []).map((r: any) => r.recording_id)),
     ];
+    this.logger.debug(`[DEBUG] fetchRecordingsForStudent | accessRecords count=${accessRecords?.length ?? 0} | recordingIds=${JSON.stringify(recordingIds)}`);
 
     if (recordingIds.length === 0) {
+      this.logger.debug(`[DEBUG] fetchRecordingsForStudent | EARLY RETURN: no access records | response=[]`);
       return [];
     }
 
@@ -920,8 +926,10 @@ export class RecordingsService {
     }
 
     const { data: recordings } = await recordingsQuery;
+    this.logger.debug(`[DEBUG] fetchRecordingsForStudent | recordings query returned count=${recordings?.length ?? 0} | status filter='ready'`);
 
     if (!recordings || recordings.length === 0) {
+      this.logger.debug(`[DEBUG] fetchRecordingsForStudent | EARLY RETURN: no ready recordings | response=[]`);
       return [];
     }
 
@@ -936,7 +944,7 @@ export class RecordingsService {
       (progress ?? []).map((p: any) => [p.video_id, p]),
     );
 
-    return recordings.map((recording: any) => ({
+    const response = recordings.map((recording: any) => ({
       ...recording,
       progress: progressMap.get(recording.id) ?? {
         watched_seconds: 0,
@@ -944,6 +952,8 @@ export class RecordingsService {
         last_watched_at: null,
       },
     }));
+    this.logger.debug(`[DEBUG] fetchRecordingsForStudent | FINAL response=${JSON.stringify(response)}`);
+    return response;
   }
 
   // ── Student: grouped recordings by batch → section ────────
@@ -964,18 +974,25 @@ export class RecordingsService {
   }
 
   private async fetchMyRecordingsGrouped(userId: string) {
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | studentId=${userId}`);
+
     const { data: batchMemberships } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
       .select('batch_id')
       .eq('user_id', userId);
 
     const userBatchIds = (batchMemberships ?? []).map((b: any) => b.batch_id);
-    if (userBatchIds.length === 0) return [];
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | batchMemberships count=${batchMemberships?.length ?? 0} | userBatchIds=${JSON.stringify(userBatchIds)}`);
+    if (userBatchIds.length === 0) {
+      this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | EARLY RETURN: no batch memberships | response=[]`);
+      return [];
+    }
 
     const { data: batches } = await this.supabaseService.client
       .from(TABLES.BATCHES)
       .select('id, name')
       .in('id', userBatchIds);
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | batches count=${batches?.length ?? 0} | batch names=${JSON.stringify((batches ?? []).map((b: any) => ({ id: b.id, name: b.name })))}`);
 
     const batchMap = new Map((batches ?? []).map((b: any) => [b.id, b.name]));
 
@@ -984,8 +1001,14 @@ export class RecordingsService {
       .select('recording_id, batch_id')
       .in('batch_id', userBatchIds);
 
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | accessRecords count=${accessRecords?.length ?? 0} | rows=${JSON.stringify(accessRecords ?? [])}`);
+
     const recordingIds = [...new Set((accessRecords ?? []).map((r: any) => r.recording_id))];
-    if (recordingIds.length === 0) return [];
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | unique recordingIds from recording_batches=${JSON.stringify(recordingIds)}`);
+    if (recordingIds.length === 0) {
+      this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | EARLY RETURN: no recording_batches entries | response=[]`);
+      return [];
+    }
 
     const { data: recordings } = await this.supabaseService.client
       .from(TABLES.RECORDINGS)
@@ -994,9 +1017,15 @@ export class RecordingsService {
       .eq('status', 'ready')
       .order('sort_order', { ascending: true });
 
-    if (!recordings || recordings.length === 0) return [];
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | recordings query returned count=${recordings?.length ?? 0} | status filter='ready' | recording statuses in DB=${JSON.stringify((recordings ?? []).map((r: any) => ({ id: r.id, status: r.status })))}`);
+
+    if (!recordings || recordings.length === 0) {
+      this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | EARLY RETURN: no ready recordings | response=[]`);
+      return [];
+    }
 
     const recordingIdList = recordings.map((r: any) => r.id);
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | ready recordingIds=${JSON.stringify(recordingIdList)}`);
 
     const { data: curriculum } = await this.supabaseService.client
       .from(TABLES.BATCH_RECORDING_CURRICULUM)
@@ -1005,6 +1034,8 @@ export class RecordingsService {
       .in('content_id', recordingIdList)
       .in('batch_id', userBatchIds)
       .eq('is_published', true);
+
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | curriculum query returned count=${curriculum?.length ?? 0} | filters: content_type=recording, is_published=true | rows=${JSON.stringify(curriculum ?? [])}`);
 
     const { data: progress } = await this.supabaseService.client
       .from(TABLES.VIDEO_PROGRESS)
@@ -1043,10 +1074,12 @@ export class RecordingsService {
     for (const batchId of userBatchIds) {
       const batchName = batchMap.get(batchId) ?? 'Unknown Batch';
       const sections = curriculumByBatch.get(batchId);
+      this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | processing batchId=${batchId} | batchName=${batchName} | hasSections=${!!sections}`);
 
       const recordingsInBatch = (accessRecords ?? [])
         .filter((a: any) => a.batch_id === batchId)
         .map((a: any) => a.recording_id);
+      this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | batchId=${batchId} | recordingsInBatch from accessRecords=${JSON.stringify(recordingsInBatch)}`);
 
       if (sections) {
         const sectionArr: any[] = [];
@@ -1070,6 +1103,7 @@ export class RecordingsService {
               };
             })
             .filter(Boolean);
+          this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | batchId=${batchId} | sectionName=${sectionName} | recordingsInSection count=${recordingsInSection.length}`);
           if (recordingsInSection.length > 0) {
             sectionArr.push({ sectionName, recordings: recordingsInSection });
           }
@@ -1094,12 +1128,13 @@ export class RecordingsService {
                 : { watchedSeconds: 0, completed: false, lastWatchedAt: null },
             };
           });
+        this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | batchId=${batchId} | uncategorized count=${uncategorized.length}`);
         if (uncategorized.length > 0) {
           result.push({ batchId, batchName, sections: [{ sectionName: null, recordings: uncategorized }] });
         }
       }
     }
-
+    this.logger.debug(`[DEBUG] fetchMyRecordingsGrouped | FINAL response=${JSON.stringify(result)}`);
     return result;
   }
 
