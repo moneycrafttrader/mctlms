@@ -156,7 +156,7 @@ export class RecordingsController {
   @Get('recordings/batch/:batchId')
   getBatchRecordings(
     @Param('batchId') batchId: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; role: string },
   ) {
     return this.recordingsService.getBatchRecordings(batchId, user);
   }
@@ -329,7 +329,7 @@ export class RecordingsController {
   @Get('videos/batch/:batchId')
   legacyGetBatchVideos(
     @Param('batchId') batchId: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; role: string },
   ) {
     return this.recordingsService.getBatchRecordings(batchId, user);
   }
