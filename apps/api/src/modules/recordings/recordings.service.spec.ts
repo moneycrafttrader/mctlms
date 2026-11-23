@@ -7,6 +7,8 @@ import { PlaybackGuardService } from '../playback/playback-guard.service';
 import { RecordingProviderResolver } from '../video-provider/recording-provider.resolver';
 import { ObservabilityService } from '../observability/observability.service';
 import { RedisService } from '@liaoliaots/nestjs-redis';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+import { batchAccessServiceMock } from '../../common/services/batch-access.service.mock';
 
 /** Fake VideoProvider standing in for whatever the resolver returns. */
 const fakeProvider = {
@@ -148,6 +150,7 @@ describe('RecordingsService', () => {
           },
         },
         RedisCacheService,
+        { provide: BatchAccessService, useValue: batchAccessServiceMock },
       ],
     }).compile();
 

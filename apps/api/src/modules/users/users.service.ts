@@ -23,6 +23,7 @@ import {
 } from '@nestjs/common';
 import { UserRole, PaginatedResponse, User as UserType } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
 import { AuthService } from '../auth/auth.service';
 import { EmailService } from '../email/email.service';
 import { TABLES } from '../../common/constants/tables.constant';
@@ -41,6 +42,7 @@ export class UsersService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
+    private readonly batchAccess: BatchAccessService,
     private readonly authService: AuthService,
     private readonly emailService: EmailService,
     @Optional() private readonly redisService?: RedisService,
@@ -137,7 +139,11 @@ export class UsersService {
    *   2. Throw NotFoundException if no user found
    *   3. Return the user object
    */
-  async findById(id: string): Promise<UserType> {
+  async findById(id: string, caller?: { id: string; role: string }): Promise<UserType> {
+    if (caller?.role === UserRole.TEACHER && caller.id !== id) {
+      await this.batchAccess.assertTeacherCanViewUserProfile(caller.id, id);
+    }
+
     const { data, error } = await this.supabaseService.client
       .from(TABLES.PROFILES)
       .select('*')

@@ -7,6 +7,8 @@ import { RedisService } from '@liaoliaots/nestjs-redis';
 import { RedisCacheService } from '../../common/services/redis-cache.service';
 import { AuditService } from '../audit/audit.service';
 import { UserRole } from '@lms/shared-types';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+import { batchAccessServiceMock } from '../../common/services/batch-access.service.mock';
 
 // Helper to create a chainable mock builder that resolves to value
 function chainMock(resolveValue: any) {
@@ -63,6 +65,7 @@ describe('UsersService - manual onboarding', () => {
         { provide: RedisService, useValue: { getOrThrow: () => ({ del: jest.fn().mockResolvedValue(1), scan: jest.fn().mockResolvedValue(['0', []]), get: jest.fn().mockResolvedValue(null) }) } },
         { provide: RedisCacheService, useValue: { invalidateRecordingsCacheForUser: jest.fn().mockResolvedValue(undefined), invalidateCoursesCacheForUser: jest.fn().mockResolvedValue(undefined), invalidateSessionsCacheForUser: jest.fn().mockResolvedValue(undefined), invalidatePaymentsCacheForUser: jest.fn().mockResolvedValue(undefined), invalidateResultsCacheForUser: jest.fn().mockResolvedValue(undefined), invalidateTestsCacheForUser: jest.fn().mockResolvedValue(undefined) } },
         { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined) } },
+        { provide: BatchAccessService, useValue: batchAccessServiceMock },
       ],
     }).compile();
     service = module.get<UsersService>(UsersService);
@@ -309,6 +312,7 @@ describe('UsersService - permanentDelete', () => {
         { provide: RedisService, useValue: { getOrThrow: () => redisMock } },
         { provide: RedisCacheService, useValue: redisCacheMock },
         { provide: AuditService, useValue: auditMock },
+        { provide: BatchAccessService, useValue: batchAccessServiceMock },
       ],
     }).compile();
     service = module.get<UsersService>(UsersService);
@@ -576,6 +580,7 @@ describe('UsersService - permanentDelete', () => {
         { provide: RedisService, useValue: { getOrThrow: () => failingRedis } },
         { provide: RedisCacheService, useValue: { invalidateRecordingsCacheForUser: jest.fn().mockRejectedValue(new Error('redis down')), invalidateCoursesCacheForUser: jest.fn().mockRejectedValue(new Error('down')), invalidateSessionsCacheForUser: jest.fn().mockRejectedValue(new Error('down')), invalidatePaymentsCacheForUser: jest.fn().mockRejectedValue(new Error('down')), invalidateResultsCacheForUser: jest.fn().mockRejectedValue(new Error('down')), invalidateTestsCacheForUser: jest.fn().mockRejectedValue(new Error('down')) } },
         { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined) } },
+        { provide: BatchAccessService, useValue: batchAccessServiceMock },
       ],
     }).compile();
     const failService = failModule.get<UsersService>(UsersService);

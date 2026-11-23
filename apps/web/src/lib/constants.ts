@@ -34,6 +34,12 @@ export const ROUTES = {
     RESULTS: '/student/results',
     NOTIFICATIONS: '/student/notifications',
   },
+  TEACHER: {
+    HOME: '/teacher',
+    BATCHES: '/teacher/batches',
+    LIVE_SESSIONS: '/teacher/live-sessions',
+    REVIEW_QUEUE: '/teacher/review-queue',
+  },
 } as const;
 
 export const ROLES = {

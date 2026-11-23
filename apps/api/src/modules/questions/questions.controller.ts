@@ -4,6 +4,7 @@ import { QuestionsService } from './questions.service';
 import { CreateQuestionDto, UpdateQuestionDto, BulkImportQuestionDto } from './dto/create-question.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { BatchAccessCaller } from '../../common/services/batch-access.service';
 
 @Controller('questions')
 export class QuestionsController {
@@ -49,31 +50,31 @@ export class QuestionsController {
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.questionsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.questionsService.findOne(id, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateQuestionDto) {
-    return this.questionsService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateQuestionDto, @CurrentUser() user?: BatchAccessCaller) {
+    return this.questionsService.update(id, dto, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Post(':id/archive')
-  archive(@Param('id') id: string) {
-    return this.questionsService.archive(id);
+  archive(@Param('id') id: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.questionsService.archive(id, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Post(':id/unarchive')
-  unarchive(@Param('id') id: string) {
-    return this.questionsService.unarchive(id);
+  unarchive(@Param('id') id: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.questionsService.unarchive(id, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.questionsService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.questionsService.remove(id, user);
   }
 }

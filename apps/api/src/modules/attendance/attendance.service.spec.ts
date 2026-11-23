@@ -34,7 +34,14 @@ describe('AttendanceService', () => {
   beforeEach(async () => {
     client = { from: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AttendanceService, { provide: SupabaseService, useValue: { client } }],
+      providers: [
+        AttendanceService,
+        { provide: SupabaseService, useValue: { client } },
+        {
+          provide: require('../../common/services/batch-access.service').BatchAccessService,
+          useValue: require('../../common/services/batch-access.service.mock').batchAccessServiceMock,
+        },
+      ],
     }).compile();
     service = module.get(AttendanceService);
   });

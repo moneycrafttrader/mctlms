@@ -3,6 +3,8 @@ import { NotFoundException, ConflictException, BadRequestException } from '@nest
 import { TestsService } from './tests.service';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+import { batchAccessServiceMock } from '../../common/services/batch-access.service.mock';
 
 function mockQuery(resolveTo: any) {
   const q: any = {
@@ -56,6 +58,7 @@ describe('TestsService', () => {
         TestsService,
         { provide: SupabaseService, useValue: { client } },
         { provide: ObservabilityService, useValue: { logEvent: jest.fn().mockResolvedValue(undefined) } },
+        { provide: BatchAccessService, useValue: batchAccessServiceMock },
       ],
     }).compile();
     service = module.get(TestsService);

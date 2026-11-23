@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, InternalServerErrorException, Logger, Optional } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
+import { BatchAccessCaller, BatchAccessService } from '../../common/services/batch-access.service';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { RedisCacheService } from '../../common/services/redis-cache.service';
@@ -25,11 +27,15 @@ export class TestsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly observabilityService: ObservabilityService,
+    private readonly batchAccess: BatchAccessService,
     @Optional() private readonly redisCache?: RedisCacheService,
   ) {}
 
-  async create(dto: CreateTestDto, createdBy: string) {
+  async create(dto: CreateTestDto, createdBy: string, caller?: BatchAccessCaller) {
     const { sections, questions, batches, ...testData } = dto;
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestBatchAssignments(caller, batches);
+    }
 
     // Enforce invariant: end = start + duration (IST round-trip already handled by frontend to UTC)
     let startISO = testData.startTime ?? null;
@@ -92,7 +98,10 @@ export class TestsService {
     }
   }
 
-  async duplicate(id: string, createdBy: string) {
+  async duplicate(id: string, createdBy: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestReadAccess(caller.id, id);
+    }
     const original = await this.findOne(id);
     if (!original) throw new NotFoundException('Test not found');
 
@@ -254,11 +263,26 @@ export class TestsService {
     }
   }
 
-  async findAll(options?: { status?: string; batchId?: string; search?: string; page?: number; limit?: number }) {
+  async findAll(
+    options?: { status?: string; batchId?: string; search?: string; page?: number; limit?: number },
+    caller?: BatchAccessCaller,
+  ) {
+    if (caller?.role === UserRole.TEACHER && options?.batchId) {
+      await this.batchAccess.assertTeacherBatchAccess(caller.id, options.batchId);
+    }
+
     let query = this.supabaseService.client
       .from(TABLES.TESTS)
       .select(TEST_SELECT, { count: 'exact' })
       .order('created_at', { ascending: false });
+
+    if (caller?.role === UserRole.TEACHER) {
+      const testIds = await this.batchAccess.getTeacherTestIds(caller.id);
+      if (testIds.length === 0) {
+        return { items: [], total: 0, page: options?.page ?? 1, limit: options?.limit ?? 50 };
+      }
+      query = query.in('id', testIds) as typeof query;
+    }
 
     if (options?.status) query = query.eq('status', options.status);
     if (options?.batchId) query = query.eq('test_batches.batch_id', options.batchId);
@@ -276,7 +300,10 @@ export class TestsService {
     return { items: data ?? [], total: count ?? 0, page, limit };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestReadAccess(caller.id, id);
+    }
     const { data, error } = await this.supabaseService.client
       .from(TABLES.TESTS)
       .select(TEST_SELECT)
@@ -287,7 +314,13 @@ export class TestsService {
     return data;
   }
 
-  async update(id: string, dto: UpdateTestDto) {
+  async update(id: string, dto: UpdateTestDto, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestWriteAccess(caller.id, id);
+      if (dto.batches !== undefined) {
+        await this.batchAccess.assertTeacherTestBatchAssignments(caller, dto.batches);
+      }
+    }
     const existing = await this.findOne(id);
     if (!existing) throw new NotFoundException('Test not found');
 
@@ -364,7 +397,10 @@ export class TestsService {
     return this.findOne(id);
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestWriteAccess(caller.id, id);
+    }
     if (this.redisCache) await this.redisCache.invalidateAllTestsCache().catch(()=>{}).catch(()=>{});
     const valid = ['draft', 'published', 'scheduled', 'active', 'closed', 'archived'];
     if (!valid.includes(status)) throw new ConflictException('Invalid status');
@@ -389,12 +425,15 @@ export class TestsService {
     return result;
   }
 
-  async archive(id: string) {
+  async archive(id: string, caller?: BatchAccessCaller) {
     if (this.redisCache) await this.redisCache.invalidateAllTestsCache().catch(()=>{}).catch(()=>{});
-    return this.updateStatus(id, 'archived');
+    return this.updateStatus(id, 'archived', caller);
   }
 
-  async remove(id: string) {
+  async remove(id: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestWriteAccess(caller.id, id);
+    }
     if (this.redisCache) await this.redisCache.invalidateAllTestsCache().catch(()=>{}).catch(()=>{});
     const { error } = await this.supabaseService.client
       .from(TABLES.TESTS)

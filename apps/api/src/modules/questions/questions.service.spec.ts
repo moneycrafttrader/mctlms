@@ -49,6 +49,10 @@ describe('QuestionsService', () => {
       providers: [
         QuestionsService,
         { provide: SupabaseService, useValue: { client: sb.client } },
+        {
+          provide: require('../../common/services/batch-access.service').BatchAccessService,
+          useValue: require('../../common/services/batch-access.service.mock').batchAccessServiceMock,
+        },
       ],
     }).compile();
     service = module.get(QuestionsService);

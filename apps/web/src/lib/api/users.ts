@@ -54,6 +54,10 @@ export async function getStudents(params: { includeInactive?: boolean } = {}) {
   return getUsers({ role: 'student', limit: 200, includeInactive: params.includeInactive });
 }
 
+export async function getTeachers(params: { includeInactive?: boolean } = {}) {
+  return getUsers({ role: 'teacher', limit: 200, includeInactive: params.includeInactive });
+}
+
 export async function permanentDeleteUser(id: string) {
   return fetchApi<{ deleted: boolean; freedEmail: string }>(`${API_ROUTES.USERS}/${id}/permanent`, {
     method: 'DELETE',

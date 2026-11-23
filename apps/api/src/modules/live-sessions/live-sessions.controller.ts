@@ -48,12 +48,14 @@ export class LiveSessionsController {
     @Query('limit') limit?: string,
     @Query('batchId') batchId?: string,
     @Query('status') status?: string,
+    @CurrentUser() user?: { id: string; role: string },
   ) {
     return this.liveSessionsService.findAll(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
       batchId,
       status,
+      user,
     );
   }
 

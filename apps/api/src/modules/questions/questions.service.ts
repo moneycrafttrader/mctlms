@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
+import { BatchAccessCaller, BatchAccessService } from '../../common/services/batch-access.service';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { ilikeContains } from '../../common/utils/like-escape.util';
@@ -13,7 +15,10 @@ const QUESTION_SELECT = `
 export class QuestionsService {
   private readonly logger = new Logger(QuestionsService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly batchAccess: BatchAccessService,
+  ) {}
 
   async create(dto: CreateQuestionDto, userId: string) {
     const { data, error } = await this.supabaseService.client
@@ -67,7 +72,10 @@ export class QuestionsService {
     return { items: data ?? [], total: count ?? 0, page, limit };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanViewQuestion(caller.id, id);
+    }
     const { data, error } = await this.supabaseService.client
       .from(TABLES.QUESTION_BANK)
       .select(QUESTION_SELECT)
@@ -78,7 +86,10 @@ export class QuestionsService {
     return data;
   }
 
-  async update(id: string, dto: UpdateQuestionDto) {
+  async update(id: string, dto: UpdateQuestionDto, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanMutateQuestion(caller.id, id);
+    }
     const existing = await this.findOne(id);
     if (!existing) throw new NotFoundException('Question not found');
 
@@ -103,7 +114,10 @@ export class QuestionsService {
     return this.findOne(id);
   }
 
-  async archive(id: string) {
+  async archive(id: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanMutateQuestion(caller.id, id);
+    }
     const { error } = await this.supabaseService.client
       .from(TABLES.QUESTION_BANK)
       .update({ is_archived: true, updated_at: new Date().toISOString() })
@@ -113,7 +127,10 @@ export class QuestionsService {
     return this.findOne(id);
   }
 
-  async unarchive(id: string) {
+  async unarchive(id: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanMutateQuestion(caller.id, id);
+    }
     const { error } = await this.supabaseService.client
       .from(TABLES.QUESTION_BANK)
       .update({ is_archived: false, updated_at: new Date().toISOString() })
@@ -123,7 +140,10 @@ export class QuestionsService {
     return this.findOne(id);
   }
 
-  async remove(id: string) {
+  async remove(id: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanMutateQuestion(caller.id, id);
+    }
     const { error } = await this.supabaseService.client
       .from(TABLES.QUESTION_BANK)
       .delete()

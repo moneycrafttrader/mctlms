@@ -20,9 +20,11 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
   Logger,
   Optional,
 } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
 import { ConfigService } from '@nestjs/config';
 import { SessionStatus } from '@lms/shared-types';
 import { RedisService } from '@liaoliaots/nestjs-redis';
@@ -38,6 +40,7 @@ import { REDIS_KEYS, REDIS_TTL } from '../../common/constants/redis-keys.constan
 import { Transaction } from '../../common/utils/transaction.util';
 import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateSessionDto } from './dto/create-session.dto';
+import { BatchAccessService } from '../../common/services/batch-access.service';
 
 type JoinOutcome =
   | 'granted'
@@ -58,6 +61,7 @@ export class LiveSessionsService {
     private readonly zoomService: ZoomService,
     private readonly observabilityService: ObservabilityService,
     private readonly configService: ConfigService,
+    private readonly batchAccess: BatchAccessService,
     redisService: RedisService,
     @Optional() private readonly redisCache?: RedisCacheService,
   ) {
@@ -281,9 +285,16 @@ export class LiveSessionsService {
     limit = 20,
     batchId?: string,
     status?: string,
+    requester?: { id: string; role: string },
   ) {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
+
+    if (requester?.role === UserRole.TEACHER) {
+      if (batchId) {
+        await this.batchAccess.assertTeacherBatchAccess(requester.id, batchId);
+      }
+    }
 
     let query = this.supabaseService.client
       .from(TABLES.LIVE_SESSIONS)
@@ -293,18 +304,23 @@ export class LiveSessionsService {
       query = query.eq('status', status);
     }
 
-    // If filtering by batch, we need to join through SESSION_BATCHES
+    let sessionIdFilter: string[] | undefined;
+
     if (batchId) {
       const { data: sessionIds } = await this.supabaseService.client
         .from(TABLES.SESSION_BATCHES)
         .select('session_id')
         .eq('batch_id', batchId);
 
-      const ids = (sessionIds ?? []).map((s: any) => s.session_id);
-      if (ids.length > 0) {
-        query = query.in('id', ids);
+      sessionIdFilter = (sessionIds ?? []).map((s: any) => s.session_id);
+    } else if (requester?.role === UserRole.TEACHER) {
+      sessionIdFilter = await this.batchAccess.getSessionIdsForTeacherBatches(requester.id);
+    }
+
+    if (sessionIdFilter !== undefined) {
+      if (sessionIdFilter.length > 0) {
+        query = query.in('id', sessionIdFilter);
       } else {
-        // No sessions for this batch — return empty
         return { items: [], total: 0, page, limit };
       }
     }
@@ -382,7 +398,7 @@ export class LiveSessionsService {
 
     // Student isolation: verify enrollment via batch_students ∩ session_batches
     // For students we return only the intersection (studentBatchIds ∩ sessionBatchIds) as batchIds/matchingBatches.
-    if (requester?.role === 'student') {
+    if (requester?.role === UserRole.STUDENT) {
       const { data: userBatches } = await this.supabaseService.client
         .from(TABLES.BATCH_STUDENTS)
         .select('batch_id')
@@ -407,7 +423,25 @@ export class LiveSessionsService {
       };
     }
 
-    // Admin/teacher: return all batches (no filtering) + matchingBatches for convenience
+    if (requester?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherSessionAccess(requester.id, id);
+      const teacherBatchIds = new Set(await this.batchAccess.getTeacherBatchIds(requester.id));
+      const matchingBatchIds = batchIds.filter((bid: string) => teacherBatchIds.has(bid));
+      const matchingBatches = await this.fetchBatchInfos(matchingBatchIds);
+      const { data: host } = await this.supabaseService.client
+        .from(TABLES.PROFILES)
+        .select('id, name, email')
+        .eq('id', session.teacher_id)
+        .single();
+      return {
+        ...session,
+        batchIds: matchingBatchIds,
+        matchingBatches,
+        hostTeacher: host ?? null,
+      };
+    }
+
+    // Admin: return all batches + matchingBatches for convenience
     const matchingBatches = await this.fetchBatchInfos(batchIds);
     const { data: teacher } = await this.supabaseService.client
       .from(TABLES.PROFILES)

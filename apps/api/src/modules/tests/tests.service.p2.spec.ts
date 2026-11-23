@@ -19,7 +19,7 @@ describe('TestsService P2-7 wildcard escaping', () => {
     const client: any = { from: jest.fn() };
     const q = mockQuery({ data: [], count: 0, error: null });
     client.from.mockReturnValue(q);
-    const svc = new TestsService(client as any, { } as any);
+    const svc = new TestsService(client as any, { } as any, {} as any);
     // need to bypass findAll's SupabaseService shape: mock client.from returns chain with ilike
     // we replace supabaseService mock to capture ilike arg
     (svc as any).supabaseService = { client };
@@ -30,7 +30,7 @@ describe('TestsService P2-7 wildcard escaping', () => {
     const client: any = { from: jest.fn() };
     const q = mockQuery({ data: [], count: 0, error: null });
     client.from.mockReturnValue(q);
-    const svc = new TestsService(client as any, {} as any);
+    const svc = new TestsService(client as any, {} as any, {} as any);
     (svc as any).supabaseService = { client };
     await svc.findAll({ search: '%abc', page: 1, limit: 10 });
     expect(q.ilike).toHaveBeenCalledWith('title', '%\\%abc%');

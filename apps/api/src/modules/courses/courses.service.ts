@@ -14,6 +14,7 @@ import { TABLES } from '../../common/constants/tables.constant';
 import { logEntityEvent } from '../../common/utils/observability-helper';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import { BatchAccessCaller, BatchAccessService } from '../../common/services/batch-access.service';
 
 @Injectable()
 export class CoursesService {
@@ -22,6 +23,7 @@ export class CoursesService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly observabilityService: ObservabilityService,
+    private readonly batchAccess: BatchAccessService,
     @Optional() private readonly redisCache?: RedisCacheService,
   ) {}
 
@@ -56,21 +58,33 @@ export class CoursesService {
     return data;
   }
 
-  async findAll(page = 1, pageSize = 20, includeInactive = false) {
+  async findAll(
+    page = 1,
+    pageSize = 20,
+    includeInactive = false,
+    caller?: BatchAccessCaller,
+  ) {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
     let query = this.supabaseService.client
       .from(TABLES.COURSES)
       .select('*, batches:batches(id, name, schedule_type, is_active, start_date, end_date, created_at)', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to);
+      .order('created_at', { ascending: false });
+
+    if (caller?.role === UserRole.TEACHER) {
+      const courseIds = await this.batchAccess.getTeacherCourseIds(caller.id);
+      if (courseIds.length === 0) {
+        return { items: [], total: 0, page, pageSize };
+      }
+      query = query.in('id', courseIds) as typeof query;
+    }
 
     if (!includeInactive) {
       query = query.eq('is_active', true);
     }
 
-    const { data, error, count } = await query;
+    const { data, error, count } = await query.range(from, to);
 
     if (error) {
       this.logger.error(`Failed to list courses: ${error.message}`);
@@ -99,6 +113,10 @@ export class CoursesService {
 
     if (error || !data) {
       throw new NotFoundException(`Course with id "${id}" not found.`);
+    }
+
+    if (currentUser?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCourseAccess(currentUser.id, id);
     }
 
     if (currentUser && currentUser.role === UserRole.STUDENT && currentUser.id) {
@@ -247,8 +265,8 @@ export class CoursesService {
     return this.update(id, { isActive: true });
   }
 
-  async getBatches(courseId: string) {
-    await this.findById(courseId);
+  async getBatches(courseId: string, caller?: BatchAccessCaller) {
+    await this.findById(courseId, caller);
 
     const { data, error } = await this.supabaseService.client
       .from(TABLES.BATCHES)
@@ -260,11 +278,16 @@ export class CoursesService {
       this.logger.error(`Failed to get batches for course ${courseId}: ${error.message}`);
       throw new InternalServerErrorException(`Could not load batches: ${error.message}`);
     }
-    return data ?? [];
+    const rows = data ?? [];
+    if (caller?.role === UserRole.TEACHER) {
+      const teacherBatches = await this.batchAccess.getTeacherBatchIds(caller.id);
+      return rows.filter((b: any) => teacherBatches.includes(b.id));
+    }
+    return rows;
   }
 
-  async getStats(courseId: string) {
-    await this.findById(courseId);
+  async getStats(courseId: string, caller?: BatchAccessCaller) {
+    await this.findById(courseId, caller);
 
     const { count: batchCount, error: batchErr } = await this.supabaseService.client
       .from(TABLES.BATCHES)
@@ -281,7 +304,11 @@ export class CoursesService {
     if (batchListErr) {
       throw new InternalServerErrorException(`Stats failed: ${batchListErr.message}`);
     }
-    const batchIds = (batches ?? []).map((b: any) => b.id);
+    let batchIds = (batches ?? []).map((b: any) => b.id);
+    if (caller?.role === UserRole.TEACHER) {
+      const teacherBatches = await this.batchAccess.getTeacherBatchIds(caller.id);
+      batchIds = batchIds.filter((id) => teacherBatches.includes(id));
+    }
 
     if (batchIds.length === 0) {
       return { batchCount: 0, studentCount: 0, upcomingSessions: 0 };

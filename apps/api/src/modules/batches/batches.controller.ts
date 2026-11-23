@@ -28,18 +28,21 @@ export class BatchesController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('isActive') isActive?: string,
+    @CurrentUser() user?: { id: string; role: string },
   ) {
+    const teacherId = user?.role === UserRole.TEACHER ? user.id : undefined;
     return this.batchesService.findAll(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
       isActive !== undefined ? isActive === 'true' : undefined,
+      teacherId,
     );
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.batchesService.findById(id);
+  findById(@Param('id') id: string, @CurrentUser() user: { id: string; role: string }) {
+    return this.batchesService.findById(id, user);
   }
 
   @Roles(UserRole.ADMIN)
@@ -93,29 +96,43 @@ export class BatchesController {
     return this.batchesService.assignTeachers(id, dto);
   }
 
+  @Roles(UserRole.ADMIN)
+  @Delete(':id/teachers')
+  removeTeachers(@Param('id') id: string, @Body('teacherIds') teacherIds: string[]) {
+    return this.batchesService.removeTeachers(id, teacherIds);
+  }
+
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id/students')
   getStudents(
     @Param('id') id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @CurrentUser() user?: { id: string; role: string },
   ) {
     return this.batchesService.getStudents(
       id,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 50,
+      user,
     );
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id/teachers')
-  getTeachers(@Param('id') id: string) {
-    return this.batchesService.getTeachers(id);
+  getTeachers(
+    @Param('id') id: string,
+    @CurrentUser() user?: { id: string; role: string },
+  ) {
+    return this.batchesService.getTeachers(id, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id/sessions')
-  getSessions(@Param('id') id: string) {
-    return this.batchesService.getSessionsForBatch(id);
+  getSessions(
+    @Param('id') id: string,
+    @CurrentUser() user?: { id: string; role: string },
+  ) {
+    return this.batchesService.getSessionsForBatch(id, user);
   }
 }

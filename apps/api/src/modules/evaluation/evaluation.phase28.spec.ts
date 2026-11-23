@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EvaluationService } from './evaluation.service';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+import { batchAccessServiceMock } from '../../common/services/batch-access.service.mock';
 
 function mockQuery(resolveTo: any) {
   const q: any = {
@@ -30,7 +32,11 @@ describe('EvaluationService Phase28', () => {
   beforeEach(async () => {
     client = { from: jest.fn(), storage: { from: jest.fn().mockReturnValue({ createSignedUrl: jest.fn().mockResolvedValue({ data: { signedUrl: 'https://signed' }, error: null }) }) } };
     const module: TestingModule = await Test.createTestingModule({
-      providers: [EvaluationService, { provide: SupabaseService, useValue: { client } }],
+      providers: [
+        EvaluationService,
+        { provide: SupabaseService, useValue: { client } },
+        { provide: BatchAccessService, useValue: batchAccessServiceMock },
+      ],
     }).compile();
     service = module.get(EvaluationService);
   });

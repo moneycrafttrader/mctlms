@@ -2,6 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { EvaluationService } from './evaluation.service';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+
+const batchAccessMock = {
+  assertTeacherCanAccessAttempt: jest.fn().mockResolvedValue(undefined),
+  assertTeacherCanAccessReviewQueueItem: jest.fn().mockResolvedValue(undefined),
+  getTeacherReviewableAttemptIds: jest.fn().mockResolvedValue(['a1']),
+};
 
 function mockQuery(resolveTo: any) {
   const q: any = {
@@ -42,7 +49,11 @@ describe('EvaluationService', () => {
   beforeEach(async () => {
     client = { from: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
-      providers: [EvaluationService, { provide: SupabaseService, useValue: { client } }],
+      providers: [
+        EvaluationService,
+        { provide: SupabaseService, useValue: { client } },
+        { provide: BatchAccessService, useValue: batchAccessMock },
+      ],
     }).compile();
     service = module.get(EvaluationService);
   });

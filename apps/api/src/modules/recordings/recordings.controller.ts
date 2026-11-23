@@ -22,6 +22,7 @@ import { UpdateVideoProgressDto } from '../videos/dto/update-video-progress.dto'
 import { UpdateBatchCurriculumDto } from './dto/update-batch-curriculum.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { BatchAccessCaller } from '../../common/services/batch-access.service';
 
 @Controller()
 export class RecordingsController {
@@ -44,8 +45,8 @@ export class RecordingsController {
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get('admin/topics/:id')
-  getTopicById(@Param('id') id: string) {
-    return this.recordingsService.getTopicById(id);
+  getTopicById(@Param('id') id: string, @CurrentUser() user: BatchAccessCaller) {
+    return this.recordingsService.getTopicById(id, user);
   }
 
   // ── Admin: Recordings ──────────────────────────────────────
@@ -61,10 +62,12 @@ export class RecordingsController {
   findAll(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @CurrentUser() user?: BatchAccessCaller,
   ) {
     return this.recordingsService.findAll(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
+      user,
     );
   }
 
@@ -155,7 +158,7 @@ export class RecordingsController {
     @Param('batchId') batchId: string,
     @CurrentUser() user: { id: string },
   ) {
-    return this.recordingsService.getBatchRecordings(batchId, user.id);
+    return this.recordingsService.getBatchRecordings(batchId, user);
   }
 
   // ── Student: My Recordings ─────────────────────────────────
@@ -254,8 +257,8 @@ export class RecordingsController {
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get('videos/topics/:id')
-  legacyGetTopicById(@Param('id') id: string) {
-    return this.recordingsService.getTopicById(id);
+  legacyGetTopicById(@Param('id') id: string, @CurrentUser() user: BatchAccessCaller) {
+    return this.recordingsService.getTopicById(id, user);
   }
 
   @Roles(UserRole.ADMIN)
@@ -328,7 +331,7 @@ export class RecordingsController {
     @Param('batchId') batchId: string,
     @CurrentUser() user: { id: string },
   ) {
-    return this.recordingsService.getBatchRecordings(batchId, user.id);
+    return this.recordingsService.getBatchRecordings(batchId, user);
   }
 
   @Roles(UserRole.STUDENT)

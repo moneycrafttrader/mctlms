@@ -213,6 +213,15 @@ export async function getBatchProgress(batchId: string) {
   return fetchApi<BatchProgress>(`${API_ROUTES.BATCHES}/${batchId}/progress`);
 }
 
+/** Teacher/admin aggregate progress for a batch — GET /admin/batches/:batchId/progress */
+export async function getBatchAdminProgress(batchId: string) {
+  return fetchApi<{
+    averageProgress?: number;
+    totalStudents?: number;
+    completionRate?: number;
+  }>(`/admin/batches/${batchId}/progress`);
+}
+
 export async function setCurriculumRule(
   batchId: string,
   categoryName: string,

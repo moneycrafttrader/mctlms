@@ -76,8 +76,11 @@ export class UsersController {
    */
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.usersService.findById(id);
+  findById(
+    @Param('id') id: string,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    return this.usersService.findById(id, user);
   }
 
   /**

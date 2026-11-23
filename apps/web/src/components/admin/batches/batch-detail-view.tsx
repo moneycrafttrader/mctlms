@@ -10,6 +10,7 @@ import {
   BarChart3,
   BookOpen,
   RefreshCw,
+  GraduationCap,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { AdminWorkspaceHeader } from '@/components/shared/AdminWorkspaceHeader';
@@ -17,6 +18,7 @@ import { AdminSection } from '@/components/shared/AdminSection';
 import { AdminStatCard } from '@/components/shared/AdminStatCard';
 import { AdminErrorState } from '@/components/shared/AdminErrorState';
 import { CurriculumTab } from './curriculum-tab';
+import { BatchTeachersTab } from './batch-teachers-tab';
 import { cn } from '@/lib/utils';
 import { fetchApi } from '@/lib/api-client';
 import {
@@ -65,11 +67,12 @@ interface BatchDetailViewProps {
   };
 }
 
-type Tab = 'overview' | 'students' | 'curriculum' | 'sessions' | 'payments';
+type Tab = 'overview' | 'students' | 'teachers' | 'curriculum' | 'sessions' | 'payments';
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'overview', label: 'Overview', icon: <BarChart3 className="h-4 w-4" /> },
   { key: 'students', label: 'Students', icon: <Users className="h-4 w-4" /> },
+  { key: 'teachers', label: 'Teachers', icon: <GraduationCap className="h-4 w-4" /> },
   { key: 'curriculum', label: 'Curriculum', icon: <ClipboardList className="h-4 w-4" /> },
   { key: 'sessions', label: 'Sessions', icon: <Calendar className="h-4 w-4" /> },
   { key: 'payments', label: 'Payments', icon: <IndianRupee className="h-4 w-4" /> },
@@ -108,8 +111,8 @@ export function BatchDetailView({ batch }: BatchDetailViewProps) {
   const loadSessions = useCallback(async () => {
     setLoadingSessions(true);
     try {
-      const result = await fetchApi<{ items: any[] }>(`/batches/${batch.id}/sessions`);
-      setSessions(result.items ?? []);
+      const result = await fetchApi<any[]>(`/batches/${batch.id}/sessions`);
+      setSessions(Array.isArray(result) ? result : []);
     } catch {
       setSessions([]);
     }
@@ -293,6 +296,8 @@ export function BatchDetailView({ batch }: BatchDetailViewProps) {
             )}
           </div>
         )}
+
+        {activeTab === 'teachers' && <BatchTeachersTab batchId={batch.id} />}
 
         {/* Curriculum Tab */}
         {activeTab === 'curriculum' && <CurriculumTab batchId={batch.id} />}

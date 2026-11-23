@@ -3,6 +3,7 @@ import { UserRole } from '@lms/shared-types';
 import { ResultsService } from './results.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { BatchAccessCaller } from '../../common/services/batch-access.service';
 
 @Controller('results')
 export class ResultsController {
@@ -35,8 +36,8 @@ export class ResultsController {
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get('test/:testId/analytics')
-  getTestAnalytics(@Param('testId') testId: string) {
-    return this.resultsService.getTestAnalytics(testId);
+  getTestAnalytics(@Param('testId') testId: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.resultsService.getTestAnalytics(testId, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
@@ -46,12 +47,17 @@ export class ResultsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('orderBy') orderBy?: string,
+    @CurrentUser() user?: BatchAccessCaller,
   ) {
-    return this.resultsService.getTestResults(testId, {
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-      orderBy,
-    });
+    return this.resultsService.getTestResults(
+      testId,
+      {
+        page: page ? parseInt(page, 10) : undefined,
+        limit: limit ? parseInt(limit, 10) : undefined,
+        orderBy,
+      },
+      user,
+    );
   }
 
   @Roles(UserRole.ADMIN)

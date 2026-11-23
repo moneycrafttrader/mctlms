@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, InternalServerErrorException, Logger, Optional } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
 import { RedisCacheService } from '../../common/services/redis-cache.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { AttemptStatus, ReviewStatus, QuestionType } from '@lms/shared-types';
@@ -21,13 +23,18 @@ interface ReviewQueueOptions {
   testId?: string;
   page?: number;
   limit?: number;
+  requester?: { id: string; role: string };
 }
 
 @Injectable()
 export class EvaluationService {
   private readonly logger = new Logger(EvaluationService.name);
 
-  constructor(private readonly supabaseService: SupabaseService, @Optional() private readonly redisCache?: RedisCacheService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly batchAccess: BatchAccessService,
+    @Optional() private readonly redisCache?: RedisCacheService,
+  ) {}
 
   /**
    * Fetch test_answers enriched with question_bank + test_question_bank data.
@@ -63,7 +70,14 @@ export class EvaluationService {
     }));
   }
 
-  async autoGradeAttempt(attemptId: string): Promise<{ summary: AutoGradeSummary; attempt: any }> {
+  async autoGradeAttempt(
+    attemptId: string,
+    requester?: { id: string; role: string },
+  ): Promise<{ summary: AutoGradeSummary; attempt: any }> {
+    if (requester?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanAccessAttempt(requester.id, attemptId);
+    }
+
     const { data: attempt, error: attemptError } = await this.supabaseService.client
       .from(TABLES.TEST_ATTEMPTS)
       .select('*')
@@ -288,6 +302,16 @@ export class EvaluationService {
   }
 
   async getReviewQueue(options: ReviewQueueOptions = {}) {
+    let teacherAttemptIds: string[] | undefined;
+    if (options.requester?.role === UserRole.TEACHER) {
+      teacherAttemptIds = await this.batchAccess.getTeacherReviewableAttemptIds(options.requester.id);
+      if (teacherAttemptIds.length === 0) {
+        const page = options.page ?? 1;
+        const limit = options.limit ?? 20;
+        return { items: [], total: 0, page, limit };
+      }
+    }
+
     let query = this.supabaseService.client
       .from(TABLES.TEST_REVIEW_QUEUE)
       .select(`
@@ -316,6 +340,9 @@ export class EvaluationService {
     if (options.status) query = query.eq('status', options.status);
     if (options.assignedTo) query = query.eq('assigned_to', options.assignedTo);
     if (options.testId) query = query.eq('test_id', options.testId);
+    if (teacherAttemptIds) {
+      query = query.in('attempt_id', teacherAttemptIds);
+    }
 
     const page = options.page ?? 1;
     const limit = options.limit ?? 20;
@@ -338,7 +365,15 @@ export class EvaluationService {
     return { items: data ?? [], total: count ?? 0, page, limit };
   }
 
-  async assignForReview(reviewId: string, reviewerId: string) {
+  async assignForReview(
+    reviewId: string,
+    reviewerId: string,
+    requester?: { id: string; role: string },
+  ) {
+    if (requester?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanAccessReviewQueueItem(requester.id, reviewId);
+    }
+
     const { data: existing, error: fetchError } = await this.supabaseService.client
       .from(TABLES.TEST_REVIEW_QUEUE)
       .select('id, status')
@@ -360,7 +395,16 @@ export class EvaluationService {
     return { id: reviewId, assignedTo: reviewerId, status: ReviewStatus.IN_REVIEW };
   }
 
-  async submitReview(reviewId: string, dto: { marksAwarded: number; feedback?: string }, evaluatedBy: string) {
+  async submitReview(
+    reviewId: string,
+    dto: { marksAwarded: number; feedback?: string },
+    evaluatedBy: string,
+    requester?: { id: string; role: string },
+  ) {
+    if (requester?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanAccessReviewQueueItem(requester.id, reviewId);
+    }
+
     const { data: reviewItem, error: reviewError } = await this.supabaseService.client
       .from(TABLES.TEST_REVIEW_QUEUE)
       .select('*, test_answers!inner(*)')
@@ -494,7 +538,11 @@ export class EvaluationService {
     return count === 0;
   }
 
-  async publishResults(attemptId: string) {
+  async publishResults(attemptId: string, requester?: { id: string; role: string }) {
+    if (requester?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanAccessAttempt(requester.id, attemptId);
+    }
+
     const { data: attempt, error: attemptError } = await this.supabaseService.client
       .from(TABLES.TEST_ATTEMPTS)
       .select('*, tests(*)')

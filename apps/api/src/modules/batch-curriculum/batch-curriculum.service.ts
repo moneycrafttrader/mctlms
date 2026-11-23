@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, InternalServerErrorException, Optional } from '@nestjs/common';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { BatchAccessService, BatchAccessCaller } from '../../common/services/batch-access.service';
 import { RedisCacheService } from '../../common/services/redis-cache.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { AddCurriculumItemDto } from './dto/add-curriculum-item.dto';
@@ -20,6 +21,7 @@ export class BatchCurriculumService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
+    private readonly batchAccess: BatchAccessService,
     @Optional() private readonly redisCache?: RedisCacheService,
   ) {}
 
@@ -44,12 +46,18 @@ export class BatchCurriculumService {
     }
   }
 
-  async findAll(batchId: string) {
+  async findAll(batchId: string, caller?: BatchAccessCaller) {
+    if (caller) {
+      await this.batchAccess.assertBatchReadAccess(caller, batchId);
+    }
     const raw = await this.fetchCurriculum(batchId, false);
     return this.groupByCategory(raw);
   }
 
-  async findPublished(batchId: string) {
+  async findPublished(batchId: string, caller?: BatchAccessCaller) {
+    if (caller) {
+      await this.batchAccess.assertBatchReadAccess(caller, batchId);
+    }
     const raw = await this.fetchCurriculum(batchId, true);
     return this.groupByCategory(raw);
   }
@@ -184,7 +192,10 @@ export class BatchCurriculumService {
     return groupByCategoryMerged(items);
   }
 
-  async add(batchId: string, dto: AddCurriculumItemDto) {
+  async add(batchId: string, dto: AddCurriculumItemDto, caller?: BatchAccessCaller) {
+    if (caller) {
+      await this.batchAccess.assertBatchWriteAccess(caller, batchId);
+    }
     let insertedData: any = null;
 
     // Normalize whitespace + case-insensitive dedup within this batch
@@ -295,8 +306,11 @@ export class BatchCurriculumService {
     return insertedData;
   }
 
-  async update(id: string, dto: UpdateCurriculumItemDto) {
+  async update(id: string, dto: UpdateCurriculumItemDto, caller?: BatchAccessCaller) {
     const existingItem = await this.findById(id);
+    if (caller) {
+      await this.batchAccess.assertBatchWriteAccess(caller, (existingItem as any).batch_id);
+    }
 
     const updates: Record<string, any> = {};
     if (dto.categoryName !== undefined) {
@@ -358,8 +372,11 @@ export class BatchCurriculumService {
     return data;
   }
 
-  async remove(id: string) {
+  async remove(id: string, caller?: BatchAccessCaller) {
     const item = await this.findById(id);
+    if (caller) {
+      await this.batchAccess.assertBatchWriteAccess(caller, (item as any).batch_id);
+    }
 
     // Check 1: Block delete if student progress exists (DB enforces RESTRICT, but catch early)
     const { count: progressCount, error: progressError } = await this.supabaseService.client
@@ -445,7 +462,10 @@ export class BatchCurriculumService {
     return { deleted: true, cascadedPrerequisites: (prereqs ?? []).length };
   }
 
-  async integrityCheck(batchId: string) {
+  async integrityCheck(batchId: string, caller?: BatchAccessCaller) {
+    if (caller) {
+      await this.batchAccess.assertBatchReadAccess(caller, batchId);
+    }
     const items = await this.fetchCurriculum(batchId, false);
 
     const orphaned: any[] = [];
@@ -510,7 +530,10 @@ export class BatchCurriculumService {
     };
   }
 
-  async reorder(batchId: string, dto: ReorderCurriculumDto) {
+  async reorder(batchId: string, dto: ReorderCurriculumDto, caller?: BatchAccessCaller) {
+    if (caller) {
+      await this.batchAccess.assertBatchWriteAccess(caller, batchId);
+    }
     if (!dto.items?.length) return { reordered: true };
 
     // Validate all ids belong to this batch and resolve their category

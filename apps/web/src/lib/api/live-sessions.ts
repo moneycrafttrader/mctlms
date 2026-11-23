@@ -42,6 +42,28 @@ export interface JoinUrlResponse {
   sessionId: string;
 }
 
+export interface LiveSessionListResult {
+  items: LiveSession[];
+  total: number;
+  page?: number;
+  limit?: number;
+}
+
+export async function listLiveSessions(params?: {
+  batchId?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const qp = new URLSearchParams();
+  if (params?.batchId) qp.set('batchId', params.batchId);
+  if (params?.status) qp.set('status', params.status);
+  if (params?.page) qp.set('page', String(params.page));
+  if (params?.limit) qp.set('limit', String(params.limit));
+  const qs = qp.toString();
+  return fetchApi<LiveSessionListResult>(`${API_ROUTES.LIVE_SESSIONS}${qs ? `?${qs}` : ''}`);
+}
+
 export async function getMyDashboardSessions() {
   return fetchApi<StudentSessions>(`${API_ROUTES.LIVE_SESSIONS}/my/dashboard`);
 }

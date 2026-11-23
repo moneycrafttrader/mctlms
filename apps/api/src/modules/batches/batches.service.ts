@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { UserRole, Batch } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
 import { EmailService } from '../email/email.service';
 import { generateTempPassword } from '../../common/utils/password.util';
 import { ObservabilityService } from '../observability/observability.service';
@@ -27,15 +28,33 @@ export class BatchesService {
     private readonly emailService: EmailService,
     private readonly observabilityService: ObservabilityService,
     private readonly redisCache: RedisCacheService,
+    private readonly batchAccess: BatchAccessService,
   ) {}
 
-  async findAll(page = 1, limit = 20, isActive?: boolean) {
+  async findAll(
+    page = 1,
+    limit = 20,
+    isActive?: boolean,
+    teacherId?: string,
+  ) {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
+
+    let allowedBatchIds: string[] | undefined;
+    if (teacherId) {
+      allowedBatchIds = await this.batchAccess.getTeacherBatchIds(teacherId);
+      if (allowedBatchIds.length === 0) {
+        return { items: [], total: 0, page, limit };
+      }
+    }
 
     let query = this.supabaseService.client
       .from(TABLES.BATCHES)
       .select('*, course:courses(id, name)', { count: 'exact' });
+
+    if (allowedBatchIds) {
+      query = query.in('id', allowedBatchIds);
+    }
 
     if (isActive !== undefined) {
       query = query.eq('is_active', isActive);
@@ -58,7 +77,11 @@ export class BatchesService {
     };
   }
 
-  async findById(id: string) {
+  async findById(id: string, caller?: { id: string; role: string }) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherBatchAccess(caller.id, id);
+    }
+
     const { data: batch, error: batchError } = await this.supabaseService.client
       .from(TABLES.BATCHES)
       .select('*, course:courses(id, name)')
@@ -315,7 +338,37 @@ export class BatchesService {
     return { assignedCount: dto.teacherIds.length };
   }
 
-  async getStudents(batchId: string, page = 1, limit = 50) {
+  async removeTeachers(batchId: string, teacherIds: string[]) {
+    if (!teacherIds?.length) {
+      throw new BadRequestException('teacherIds must not be empty');
+    }
+    await this.findById(batchId);
+
+    const { data, error } = await this.supabaseService.client
+      .from(TABLES.BATCH_TEACHERS)
+      .delete()
+      .eq('batch_id', batchId)
+      .in('user_id', teacherIds)
+      .select();
+
+    if (error) {
+      this.logger.error(`Failed to remove teachers from batch ${batchId}: ${error.message}`);
+      throw new BadRequestException('Failed to remove teachers');
+    }
+
+    return { removedCount: (data ?? []).length };
+  }
+
+  async getStudents(
+    batchId: string,
+    page = 1,
+    limit = 50,
+    caller?: { id: string; role: string },
+  ) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherBatchAccess(caller.id, batchId);
+    }
+
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
@@ -338,7 +391,11 @@ export class BatchesService {
     };
   }
 
-  async getTeachers(batchId: string) {
+  async getTeachers(batchId: string, caller?: { id: string; role: string }) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherBatchAccess(caller.id, batchId);
+    }
+
     const { data, error } = await this.supabaseService.client
       .from(TABLES.BATCH_TEACHERS)
       .select('user_id, profiles!inner(id, name, email, role, is_active, created_at)')
@@ -352,7 +409,11 @@ export class BatchesService {
     return (data ?? []).map((item: any) => item.profiles);
   }
 
-  async getSessionsForBatch(batchId: string) {
+  async getSessionsForBatch(batchId: string, caller?: { id: string; role: string }) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherBatchAccess(caller.id, batchId);
+    }
+
     const { data, error } = await this.supabaseService.client
       .from(TABLES.SESSION_BATCHES)
       .select('session_id, live_sessions!inner(*)')

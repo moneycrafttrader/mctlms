@@ -104,6 +104,8 @@ export function useSession(): UseSessionReturn {
           router.push(ROUTES.CHANGE_PASSWORD);
         } else if (user.role === 'student') {
           router.push(ROUTES.STUDENT.HOME);
+        } else if (user.role === 'teacher') {
+          router.push(ROUTES.TEACHER.HOME);
         } else {
           router.push(ROUTES.ADMIN.HOME);
         }

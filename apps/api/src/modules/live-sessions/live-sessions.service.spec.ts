@@ -7,6 +7,8 @@ import { ZoomService } from '../zoom/zoom.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '@liaoliaots/nestjs-redis';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+import { batchAccessServiceMock } from '../../common/services/batch-access.service.mock';
 
 function mockQuery(resolveTo: any) {
   const q: any = {
@@ -66,6 +68,7 @@ describe('LiveSessionsService', () => {
         { provide: ObservabilityService, useValue: { logEvent: jest.fn().mockResolvedValue(undefined) } },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('df981417-5356-4c64-8a2b-66ef7720162c') } },
         { provide: RedisService, useValue: { getOrThrow: () => redis } },
+        { provide: BatchAccessService, useValue: batchAccessServiceMock },
       ],
     }).compile();
     service = module.get(LiveSessionsService);
@@ -128,6 +131,7 @@ describe('LiveSessionsService', () => {
           { provide: ObservabilityService, useValue: { logEvent: jest.fn() } },
           { provide: ConfigService, useValue: config },
           { provide: RedisService, useValue: { getOrThrow: () => redis } },
+          { provide: BatchAccessService, useValue: batchAccessServiceMock },
         ],
       }).compile();
       const svc = module.get(LiveSessionsService);

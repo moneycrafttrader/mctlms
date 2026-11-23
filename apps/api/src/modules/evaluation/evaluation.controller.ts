@@ -11,8 +11,11 @@ export class EvaluationController {
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Post(':attemptId/auto-grade')
-  autoGradeAttempt(@Param('attemptId') attemptId: string): Promise<{ summary: AutoGradeSummary; attempt: any }> {
-    return this.evaluationService.autoGradeAttempt(attemptId);
+  autoGradeAttempt(
+    @Param('attemptId') attemptId: string,
+    @CurrentUser() user: { id: string; role: string },
+  ): Promise<{ summary: AutoGradeSummary; attempt: any }> {
+    return this.evaluationService.autoGradeAttempt(attemptId, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
@@ -23,6 +26,7 @@ export class EvaluationController {
     @Query('testId') testId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @CurrentUser() user?: { id: string; role: string },
   ) {
     return this.evaluationService.getReviewQueue({
       status,
@@ -30,6 +34,7 @@ export class EvaluationController {
       testId,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
+      requester: user,
     });
   }
 
@@ -37,9 +42,9 @@ export class EvaluationController {
   @Patch('review-queue/:id/assign')
   assignForReview(
     @Param('id') id: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; role: string },
   ) {
-    return this.evaluationService.assignForReview(id, user.id);
+    return this.evaluationService.assignForReview(id, user.id, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
@@ -47,15 +52,18 @@ export class EvaluationController {
   submitReview(
     @Param('id') id: string,
     @Body() dto: SubmitReviewDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { id: string; role: string },
   ) {
-    return this.evaluationService.submitReview(id, dto, user.id);
+    return this.evaluationService.submitReview(id, dto, user.id, user);
   }
 
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Post(':attemptId/publish')
-  publishResults(@Param('attemptId') attemptId: string) {
-    return this.evaluationService.publishResults(attemptId);
+  publishResults(
+    @Param('attemptId') attemptId: string,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    return this.evaluationService.publishResults(attemptId, user);
   }
 
   @Roles(UserRole.ADMIN)

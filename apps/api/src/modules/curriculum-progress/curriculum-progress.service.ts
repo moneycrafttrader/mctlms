@@ -1,4 +1,6 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
+import { BatchAccessCaller, BatchAccessService } from '../../common/services/batch-access.service';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
 import { groupByCategoryMerged } from '../../common/utils/category.util';
@@ -9,9 +11,15 @@ const PROGRESS_BATCH_SIZE = 50;
 export class CurriculumProgressService {
   private readonly logger = new Logger(CurriculumProgressService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly batchAccess: BatchAccessService,
+  ) {}
 
-  async getAdminProgress(batchId: string) {
+  async getAdminProgress(batchId: string, caller?: BatchAccessCaller) {
+    if (caller) {
+      await this.batchAccess.assertBatchReadAccess(caller, batchId);
+    }
     // 1. Fetch all enrolled students
     const { data: enrolled, error: enrollErr } = await this.supabaseService.client
       .from(TABLES.BATCH_STUDENTS)
@@ -144,7 +152,9 @@ export class CurriculumProgressService {
     };
   }
 
-  async getProgress(batchId: string, userId: string) {
+  async getProgress(batchId: string, caller: BatchAccessCaller) {
+    await this.batchAccess.assertBatchReadAccess(caller, batchId);
+    const userId = caller.id;
     const [{ data: curriculum }, { data: rules }, { data: prerequisites }] = await Promise.all([
       this.supabaseService.client.from(TABLES.BATCH_RECORDING_CURRICULUM).select('*').eq('batch_id', batchId),
       this.supabaseService.client.from(TABLES.BATCH_CURRICULUM_RULES).select('*').eq('batch_id', batchId),

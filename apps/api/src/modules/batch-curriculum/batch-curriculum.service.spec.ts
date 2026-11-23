@@ -2,6 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { InternalServerErrorException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { BatchCurriculumService } from './batch-curriculum.service';
 import { SupabaseService } from '../../common/services/supabase.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+
+const batchAccessMock = {
+  assertBatchReadAccess: jest.fn().mockResolvedValue(undefined),
+  assertBatchWriteAccess: jest.fn().mockResolvedValue(undefined),
+};
 
 function buildChain() {
   const chain: any = {
@@ -38,6 +44,7 @@ describe('BatchCurriculumService', () => {
             client: chain,
           },
         },
+        { provide: BatchAccessService, useValue: batchAccessMock },
       ],
     }).compile();
 

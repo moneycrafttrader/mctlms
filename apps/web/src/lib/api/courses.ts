@@ -176,6 +176,49 @@ export async function getBatch(id: string) {
   return fetchApi<Batch>(`${API_ROUTES.BATCHES}/${id}`);
 }
 
+export interface BatchTeacherProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
+/**
+ * GET /batches/:id/teachers
+ */
+export async function getBatchTeachers(batchId: string) {
+  return fetchApi<BatchTeacherProfile[]>(`${API_ROUTES.BATCHES}/${batchId}/teachers`);
+}
+
+/**
+ * POST /batches/:id/teachers { teacherIds }
+ */
+export async function assignTeachersToBatch(batchId: string, teacherIds: string[]) {
+  return fetchApi<{ assignedCount: number }>(`${API_ROUTES.BATCHES}/${batchId}/teachers`, {
+    method: 'POST',
+    body: JSON.stringify({ teacherIds }),
+  });
+}
+
+/**
+ * DELETE /batches/:id/teachers { teacherIds }
+ */
+export async function removeTeachersFromBatch(batchId: string, teacherIds: string[]) {
+  return fetchApi<{ removedCount: number }>(`${API_ROUTES.BATCHES}/${batchId}/teachers`, {
+    method: 'DELETE',
+    body: JSON.stringify({ teacherIds }),
+  });
+}
+
+/**
+ * GET /batches/:id/sessions
+ */
+export async function getBatchSessions(batchId: string) {
+  return fetchApi<Record<string, unknown>[]>(`${API_ROUTES.BATCHES}/${batchId}/sessions`);
+}
+
 /**
  * Fetch all batches (paginated, optionally filtered by active status).
  */

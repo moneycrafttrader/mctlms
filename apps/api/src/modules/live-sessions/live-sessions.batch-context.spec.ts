@@ -7,6 +7,8 @@ import { ObservabilityService } from '../observability/observability.service';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '@liaoliaots/nestjs-redis';
 import { NotFoundException } from '@nestjs/common';
+import { BatchAccessService } from '../../common/services/batch-access.service';
+import { batchAccessServiceMock } from '../../common/services/batch-access.service.mock';
 
 function mockQuery(resolveTo: any) {
   const q: any = {
@@ -45,6 +47,7 @@ function createService(client: any) {
       { provide: ObservabilityService, useValue: { logEvent: jest.fn() } },
       { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(null) } },
       { provide: RedisService, useValue: { getOrThrow: () => ({ get: jest.fn(), setex: jest.fn(), del: jest.fn(), scan: jest.fn().mockResolvedValue(['0', []]) }) } },
+      { provide: BatchAccessService, useValue: batchAccessServiceMock },
     ],
   }).compile().then((m) => m.get(LiveSessionsService));
 }

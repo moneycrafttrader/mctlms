@@ -33,6 +33,7 @@ import { UpdateVideoDto } from './dto/update-video.dto';
 import { UpdateVideoProgressDto } from './dto/update-video-progress.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { BatchAccessCaller } from '../../common/services/batch-access.service';
 
 @Controller('videos')
 export class VideosController {
@@ -192,8 +193,8 @@ export class VideosController {
    */
   @Roles(UserRole.STUDENT, UserRole.TEACHER, UserRole.ADMIN)
   @Get('batch/:batchId')
-  getBatchVideos(@Param('batchId') batchId: string) {
-    return this.videosService.getBatchVideos(batchId);
+  getBatchVideos(@Param('batchId') batchId: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.videosService.getBatchVideos(batchId, user);
   }
 
   // ── Student: Videos ──────────────────────────────────────────

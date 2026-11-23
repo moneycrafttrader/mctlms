@@ -15,6 +15,7 @@ import {
 import { UserRole } from '@lms/shared-types';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { BatchAccessCaller } from '../../common/services/batch-access.service';
 import { CoursesService } from './courses.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
@@ -35,8 +36,9 @@ export class CoursesController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
     @Query('includeInactive', new DefaultValuePipe(false), ParseBoolPipe) includeInactive: boolean,
+    @CurrentUser() user?: BatchAccessCaller,
   ) {
-    return this.coursesService.findAll(page, pageSize, includeInactive);
+    return this.coursesService.findAll(page, pageSize, includeInactive, user);
   }
 
   @Get('my')
@@ -62,14 +64,14 @@ export class CoursesController {
 
   @Get(':id/batches')
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  getBatches(@Param('id', ParseUUIDPipe) id: string) {
-    return this.coursesService.getBatches(id);
+  getBatches(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.coursesService.getBatches(id, user);
   }
 
   @Get(':id/stats')
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  getStats(@Param('id', ParseUUIDPipe) id: string) {
-    return this.coursesService.getStats(id);
+  getStats(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user?: BatchAccessCaller) {
+    return this.coursesService.getStats(id, user);
   }
 
   @Patch(':id')

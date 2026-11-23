@@ -30,6 +30,11 @@ import { RequestUploadDto } from '../videos/dto/request-upload.dto';
 import { UpdateBatchCurriculumDto, BatchCurriculumAssignment } from './dto/update-batch-curriculum.dto';
 import { UpdateRecordingDto } from './dto/update-recording.dto';
 import { UpdateVideoProgressDto } from '../videos/dto/update-video-progress.dto';
+import { UserRole } from '@lms/shared-types';
+import {
+  BatchAccessCaller,
+  BatchAccessService,
+} from '../../common/services/batch-access.service';
 
 @Injectable()
 export class RecordingsService {
@@ -42,6 +47,7 @@ export class RecordingsService {
     private readonly observabilityService: ObservabilityService,
     private readonly redisCache: RedisCacheService,
     private readonly providerResolver: RecordingProviderResolver,
+    private readonly batchAccess: BatchAccessService,
     redisService: RedisService,
   ) {
     this.redis = redisService.getOrThrow();
@@ -99,7 +105,7 @@ export class RecordingsService {
    * @returns Topic row with nested recordings array.
    * @throws NotFoundException if the topic does not exist.
    */
-  async getTopicById(id: string) {
+  async getTopicById(id: string, caller?: BatchAccessCaller) {
     const { data: topic, error: topicError } = await this.supabaseService.client
       .from(TABLES.TOPICS)
       .select('*')
@@ -110,11 +116,21 @@ export class RecordingsService {
       throw new NotFoundException('Topic not found');
     }
 
-    const { data: recordings } = await this.supabaseService.client
+    let recordingsQuery = this.supabaseService.client
       .from(TABLES.RECORDINGS)
       .select('*')
       .eq('topic_id', id)
       .order('sort_order', { ascending: true });
+
+    if (caller?.role === UserRole.TEACHER) {
+      const allowedIds = await this.batchAccess.getTeacherRecordingIds(caller.id);
+      if (allowedIds.length === 0) {
+        return { ...topic, recordings: [] };
+      }
+      recordingsQuery = recordingsQuery.in('id', allowedIds) as typeof recordingsQuery;
+    }
+
+    const { data: recordings } = await recordingsQuery;
 
     return { ...topic, recordings: recordings ?? [] };
   }
@@ -191,16 +207,25 @@ export class RecordingsService {
    * @returns Paginated result with items, total, page, limit.
    * @throws BadRequestException on DB query failure.
    */
-  async findAll(page = 1, limit = 20) {
+  async findAll(page = 1, limit = 20, caller?: BatchAccessCaller) {
     limit = Math.min(limit, 100);
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    const { data: recordings, error, count } = await this.supabaseService.client
+    let listQuery = this.supabaseService.client
       .from(TABLES.RECORDINGS)
       .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to);
+      .order('created_at', { ascending: false });
+
+    if (caller?.role === UserRole.TEACHER) {
+      const allowedIds = await this.batchAccess.getTeacherRecordingIds(caller.id);
+      if (allowedIds.length === 0) {
+        return { items: [], total: 0, page, limit };
+      }
+      listQuery = listQuery.in('id', allowedIds) as typeof listQuery;
+    }
+
+    const { data: recordings, error, count } = await listQuery.range(from, to);
 
     if (error) {
       this.logger.error(`Failed to fetch recordings: ${error.message}`);
@@ -1952,16 +1977,20 @@ export class RecordingsService {
    * @returns Array of recordings in the batch with title, description, duration, status.
    * @throws ForbiddenException if student is not a member of the batch.
    */
-  async getBatchRecordings(batchId: string, userId: string) {
-    const { data: membership } = await this.supabaseService.client
-      .from(TABLES.BATCH_STUDENTS)
-      .select('batch_id')
-      .eq('user_id', userId)
-      .eq('batch_id', batchId)
-      .maybeSingle();
+  async getBatchRecordings(batchId: string, caller: { id: string; role: string }) {
+    if (caller.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherBatchAccess(caller.id, batchId);
+    } else if (caller.role === UserRole.STUDENT) {
+      const { data: membership } = await this.supabaseService.client
+        .from(TABLES.BATCH_STUDENTS)
+        .select('batch_id')
+        .eq('user_id', caller.id)
+        .eq('batch_id', batchId)
+        .maybeSingle();
 
-    if (!membership) {
-      throw new ForbiddenException('You do not have access to this batch');
+      if (!membership) {
+        throw new ForbiddenException('You do not have access to this batch');
+      }
     }
 
     const { data: links } = await this.supabaseService.client

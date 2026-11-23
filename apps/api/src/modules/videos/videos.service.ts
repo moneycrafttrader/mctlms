@@ -34,6 +34,8 @@ import { CreateVideoDto } from './dto/create-video.dto';
 import { RequestUploadDto } from './dto/request-upload.dto';
 import { UpdateVideoDto } from './dto/update-video.dto';
 import { UpdateVideoProgressDto } from './dto/update-video-progress.dto';
+import { UserRole } from '@lms/shared-types';
+import { BatchAccessCaller, BatchAccessService } from '../../common/services/batch-access.service';
 
 @Injectable()
 export class VideosService {
@@ -44,6 +46,7 @@ export class VideosService {
     private readonly supabaseService: SupabaseService,
     private readonly muxService: MuxService,
     private readonly playbackGuard: PlaybackGuardService,
+    private readonly batchAccess: BatchAccessService,
     redisService: RedisService,
   ) {
     this.redis = redisService.getOrThrow();
@@ -535,7 +538,10 @@ export class VideosService {
    * Fetch all ready videos assigned to a specific batch.
    * Used by the student course classroom page.
    */
-  async getBatchVideos(batchId: string) {
+  async getBatchVideos(batchId: string, caller?: BatchAccessCaller) {
+    if (caller) {
+      await this.batchAccess.assertBatchReadAccess(caller, batchId);
+    }
     const { data: links } = await this.supabaseService.client
       .from(TABLES.VIDEO_BATCHES)
       .select('video_id')

@@ -1,4 +1,6 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, Optional } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
+import { BatchAccessCaller, BatchAccessService } from '../../common/services/batch-access.service';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { RedisCacheService } from '../../common/services/redis-cache.service';
 import { TABLES } from '../../common/constants/tables.constant';
@@ -8,7 +10,11 @@ export class ResultsService {
   private readonly logger = new Logger(ResultsService.name);
   private readonly dashboardProjection = 'id, attempt_id, test_id, test_title:tests(title), percentage, rank, passed, obtained_marks, total_marks, published_at';
 
-  constructor(private readonly supabaseService: SupabaseService, @Optional() private readonly redisCache?: RedisCacheService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly batchAccess: BatchAccessService,
+    @Optional() private readonly redisCache?: RedisCacheService,
+  ) {}
 
   private async refreshAnswerUrls(answer: any): Promise<any> {
     if (!answer || typeof answer !== 'object' || !answer.storagePath) return answer;
@@ -295,7 +301,11 @@ export class ResultsService {
   async getTestResults(
     testId: string,
     options?: { page?: number; limit?: number; orderBy?: string },
+    caller?: BatchAccessCaller,
   ) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestReadAccess(caller.id, testId);
+    }
     const page = options?.page ?? 1;
     const limit = options?.limit ?? 50;
     const from = (page - 1) * limit;
@@ -333,7 +343,10 @@ export class ResultsService {
     return { items, total: count ?? 0, page, limit };
   }
 
-  async getTestAnalytics(testId: string) {
+  async getTestAnalytics(testId: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherTestReadAccess(caller.id, testId);
+    }
     const { data, error } = await this.supabaseService.client
       .from(TABLES.TEST_ANALYTICS_SNAPSHOTS)
       .select('*')

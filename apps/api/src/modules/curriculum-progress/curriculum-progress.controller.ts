@@ -10,6 +10,7 @@ import {
 import { UserRole } from '@lms/shared-types';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { BatchAccessCaller } from '../../common/services/batch-access.service';
 import { CurriculumProgressService } from './curriculum-progress.service';
 
 @Controller()
@@ -18,17 +19,20 @@ export class CurriculumProgressController {
 
   @Get('admin/batches/:batchId/progress')
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
-  getAdminProgress(@Param('batchId', ParseUUIDPipe) batchId: string) {
-    return this.service.getAdminProgress(batchId);
+  getAdminProgress(
+    @Param('batchId', ParseUUIDPipe) batchId: string,
+    @CurrentUser() user: BatchAccessCaller,
+  ) {
+    return this.service.getAdminProgress(batchId, user);
   }
 
   @Get('batches/:batchId/progress')
   @Roles(UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT)
   getMyProgress(
     @Param('batchId', ParseUUIDPipe) batchId: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: BatchAccessCaller,
   ) {
-    return this.service.getProgress(batchId, user.id);
+    return this.service.getProgress(batchId, user);
   }
 
   @Post('admin/curriculum-rules')

@@ -4,6 +4,7 @@ import { SupabaseService } from '../../common/services/supabase.service';
 import { RedisCacheService } from '../../common/services/redis-cache.service';
 import { EmailService } from '../email/email.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { BatchAccessService } from '../../common/services/batch-access.service';
 
 function mockQuery(resolveTo: any) {
   const q: any = {
@@ -58,6 +59,13 @@ describe('BatchesService — H1 cache invalidation (Phase 10A)', () => {
         { provide: RedisCacheService, useValue: redisCache },
         { provide: EmailService, useValue: { sendWelcomeEmail: jest.fn().mockResolvedValue(undefined) } },
         { provide: ObservabilityService, useValue: { logEvent: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: BatchAccessService,
+          useValue: {
+            getTeacherBatchIds: jest.fn().mockResolvedValue([]),
+            assertTeacherBatchAccess: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
     service = module.get(BatchesService);

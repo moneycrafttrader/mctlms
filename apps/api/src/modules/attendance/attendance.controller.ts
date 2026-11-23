@@ -29,6 +29,7 @@ import { AttendanceService } from './attendance.service';
 import { ManualAttendanceDto } from './dto/manual-attendance.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { BatchAccessCaller } from '../../common/services/batch-access.service';
 
 @Controller('attendance')
 export class AttendanceController {
@@ -42,8 +43,11 @@ export class AttendanceController {
    */
   @Roles(UserRole.ADMIN, UserRole.TEACHER)
   @Get('session/:sessionId')
-  getSessionAttendance(@Param('sessionId') sessionId: string) {
-    return this.attendanceService.getSessionAttendance(sessionId);
+  getSessionAttendance(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user?: BatchAccessCaller,
+  ) {
+    return this.attendanceService.getSessionAttendance(sessionId, user);
   }
 
   /**
@@ -56,9 +60,9 @@ export class AttendanceController {
   @Post('manual')
   markManual(
     @Body() dto: ManualAttendanceDto,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: BatchAccessCaller,
   ) {
-    return this.attendanceService.markManual(dto, user.id);
+    return this.attendanceService.markManual(dto, user.id, user);
   }
 
   /**
@@ -72,8 +76,9 @@ export class AttendanceController {
   getStudentAttendance(
     @Param('userId') userId: string,
     @Query('batchId') batchId?: string,
+    @CurrentUser() user?: BatchAccessCaller,
   ) {
-    return this.attendanceService.getStudentAttendance(userId, batchId);
+    return this.attendanceService.getStudentAttendance(userId, batchId, user);
   }
 
   /**
@@ -102,8 +107,9 @@ export class AttendanceController {
   getBatchReport(
     @Param('batchId') batchId: string,
     @Query('sessionId') sessionId?: string,
+    @CurrentUser() user?: BatchAccessCaller,
   ) {
-    return this.attendanceService.getBatchAttendanceReport(batchId, sessionId);
+    return this.attendanceService.getBatchAttendanceReport(batchId, sessionId, user);
   }
 
   /**

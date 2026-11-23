@@ -22,6 +22,8 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { UserRole } from '@lms/shared-types';
+import { BatchAccessCaller, BatchAccessService } from '../../common/services/batch-access.service';
 import { AttendanceStatus } from '@lms/shared-types';
 import { SupabaseService } from '../../common/services/supabase.service';
 import { TABLES } from '../../common/constants/tables.constant';
@@ -31,7 +33,10 @@ import { ManualAttendanceDto } from './dto/manual-attendance.dto';
 export class AttendanceService {
   private readonly logger = new Logger(AttendanceService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly batchAccess: BatchAccessService,
+  ) {}
 
   // ──────────────────────────────────────────────────────────────
   //  getSessionAttendance
@@ -48,7 +53,10 @@ export class AttendanceService {
    *   3. Count present, absent, late, and total
    *   4. Return summary + records
    */
-  async getSessionAttendance(sessionId: string) {
+  async getSessionAttendance(sessionId: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherSessionAccess(caller.id, sessionId);
+    }
     // Verify session exists
     const { data: session, error: sessionError } = await this.supabaseService.client
       .from(TABLES.LIVE_SESSIONS)
@@ -107,7 +115,11 @@ export class AttendanceService {
    *   2. Upsert each entry into TABLES.ATTENDANCE
    *   3. Return count of records updated
    */
-  async markManual(dto: ManualAttendanceDto, markedBy: string) {
+  async markManual(dto: ManualAttendanceDto, markedBy: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      const studentIds = dto.entries.map((e) => e.userId);
+      await this.batchAccess.assertTeacherCanMarkAttendanceEntries(caller.id, dto.sessionId, studentIds);
+    }
     // Verify session exists and has ended
     const { data: session, error: sessionError } = await this.supabaseService.client
       .from(TABLES.LIVE_SESSIONS)
@@ -162,7 +174,17 @@ export class AttendanceService {
    *   3. Calculate total, present, absent, late, and percentage
    *   4. Return summary + records
    */
-  async getStudentAttendance(userId: string, batchId?: string) {
+  async getStudentAttendance(
+    userId: string,
+    batchId?: string,
+    caller?: BatchAccessCaller,
+  ) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherCanViewUserProfile(caller.id, userId);
+      if (batchId) {
+        await this.batchAccess.assertTeacherBatchAccess(caller.id, batchId);
+      }
+    }
     // Find sessions via SESSION_REGISTRANTS
     let sessionQuery = this.supabaseService.client
       .from(TABLES.SESSION_REGISTRANTS)
@@ -242,7 +264,13 @@ export class AttendanceService {
    *   4. For each student, get their attendance across all sessions
    *   5. Build the grid and calculate per-student percentages
    */
-  async getBatchAttendanceReport(batchId: string, sessionId?: string) {
+  async getBatchAttendanceReport(batchId: string, sessionId?: string, caller?: BatchAccessCaller) {
+    if (caller?.role === UserRole.TEACHER) {
+      await this.batchAccess.assertTeacherBatchAccess(caller.id, batchId);
+      if (sessionId) {
+        await this.batchAccess.assertTeacherSessionAccess(caller.id, sessionId);
+      }
+    }
     // Verify batch exists
     const { data: batch, error: batchError } = await this.supabaseService.client
       .from(TABLES.BATCHES)
