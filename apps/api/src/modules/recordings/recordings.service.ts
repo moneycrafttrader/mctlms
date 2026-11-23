@@ -1977,7 +1977,7 @@ export class RecordingsService {
    * @returns Array of recordings in the batch with title, description, duration, status.
    * @throws ForbiddenException if student is not a member of the batch.
    */
-  async getBatchRecordings(batchId: string, caller: { id: string; role: string }) {
+  async getBatchRecordings(batchId: string, caller: BatchAccessCaller) {
     if (caller.role === UserRole.TEACHER) {
       await this.batchAccess.assertTeacherBatchAccess(caller.id, batchId);
     } else if (caller.role === UserRole.STUDENT) {
