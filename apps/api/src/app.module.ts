@@ -68,6 +68,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { ObservabilityInterceptor } from './modules/observability/observability.interceptor';
+import { resolveRedisClientOptions } from './common/config/redis-options.factory';
 
 // ── Jobs ─────────────────────────────────────────────────────
 import { RecordingUploadJob } from './jobs/recording-upload.job';
@@ -98,12 +99,7 @@ import { RecordingCleanupJob } from './jobs/recording-cleanup.job';
     RedisModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        config: {
-          host: config.get<string>('REDIS_HOST') ?? '127.0.0.1',
-          port: config.get<number>('REDIS_PORT') ?? 6379,
-          password: config.get<string>('REDIS_PASSWORD'),
-          tls: config.get<string>('REDIS_PASSWORD') ? {} : undefined,
-        },
+        config: resolveRedisClientOptions(config),
       }),
     }),
 
